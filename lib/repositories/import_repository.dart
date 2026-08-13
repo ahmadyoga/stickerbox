@@ -1,3 +1,4 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 
 class ImportRepository {
@@ -12,8 +13,10 @@ class ImportRepository {
   }
 
   Future<String?> pickGifFile() async {
-    // ponytail: FilePicker.platform.pickFiles() doesn't exist in v11.0.3
-    // Task 8 will add this properly with the correct API
-    return null;
+    final result = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['gif'],
+    );
+    return result?.files.single.path;
   }
 }
