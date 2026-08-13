@@ -13,8 +13,9 @@ WhatsApp's "Add to WhatsApp" flow.
 ## Scope (v1)
 
 - Static stickers (WebP, ≤100KB) and animated stickers (animated WebP,
-  ≤500KB), both sourced only from **direct** imports (gallery images, or
-  GIF/video files for animated).
+  ≤500KB), both sourced only from **direct** imports (gallery images for
+  static, GIF files for animated). Video-file import for animated stickers
+  is out of scope for v1 — see Processing pipeline for why.
 - Link import (share sheet + paste URL) is **static-thumbnail-only**: these
   platforms don't expose stable media-download APIs, and scraping video off
   TikTok is fragile and ToS-grey. Link import fetches a preview image
@@ -72,13 +73,20 @@ stores only metadata and file paths, not blobs.
 
 ## Processing pipeline (`StickerProcessor`)
 
-- **Static:** crop (`image_cropper`) → resize to 512×512 → encode WebP →
-  iteratively re-compress until ≤100KB
-- **Animated** (direct GIF/video import only): extract/scale frames
-  (`ffmpeg_kit_flutter`) → cap duration/frame count to WhatsApp's animated
-  sticker limits → encode animated WebP → iteratively re-compress until
-  ≤500KB
-- **Tray icon:** user crops a square image → resize to 96×96 PNG
+- **Static:** crop (`image_cropper`) → resize to 512×512 → encode WebP
+  (`flutter_image_compress`, native lossy encoder with a `quality` knob) →
+  iteratively lower quality until ≤100KB
+- **Animated** (direct GIF import only): decode multi-frame GIF → resize
+  each frame to fit 512×512 → cap frame count/duration to WhatsApp's
+  animated sticker limits → encode animated WebP (pure-Dart `image` package,
+  `WebPEncoder`, lossless-only — no quality knob) → iteratively reduce color
+  count (quantization) and/or frame count until ≤500KB.
+  (Note: `ffmpeg_kit_flutter`, the tool originally named here, was retired
+  in Jan 2025 with binaries pulled from Maven/CocoaPods/npm — this pipeline
+  avoids it entirely in favor of pure-Dart encoding, with no native binary
+  dependency.)
+- **Tray icon:** user crops a square image → resize to 96×96 → encode PNG
+  (`image` package)
 
 ## Pack management
 
