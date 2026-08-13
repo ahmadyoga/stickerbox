@@ -47,6 +47,36 @@ void main() {
   );
 
   blocTest<PackListBloc, PackListState>(
+    'PackRenamed saves the renamed pack then reloads',
+    setUp: () {
+      when(() => repository.getPack('1')).thenReturn(
+        StickerPack(id: '1', name: 'Old', publisherName: 'Me'),
+      );
+      when(() => repository.savePack(any())).thenAnswer((_) async {});
+      when(() => repository.getAllPacks()).thenReturn(
+        [StickerPack(id: '1', name: 'New Name', publisherName: 'Me')],
+      );
+    },
+    build: () => PackListBloc(repository),
+    act: (bloc) => bloc.add(const PackRenamed('1', 'New Name')),
+    verify: (_) {
+      final captured = verify(() => repository.savePack(captureAny())).captured;
+      final saved = captured.single as StickerPack;
+      expect(saved.name, 'New Name');
+    },
+  );
+
+  blocTest<PackListBloc, PackListState>(
+    'PackRenamed is a no-op when the pack does not exist',
+    setUp: () => when(() => repository.getPack('missing')).thenReturn(null),
+    build: () => PackListBloc(repository),
+    act: (bloc) => bloc.add(const PackRenamed('missing', 'New Name')),
+    verify: (_) {
+      verifyNever(() => repository.savePack(any()));
+    },
+  );
+
+  blocTest<PackListBloc, PackListState>(
     'PackDeleted removes a pack then reloads',
     setUp: () {
       when(() => repository.deletePack('1')).thenAnswer((_) async {});
