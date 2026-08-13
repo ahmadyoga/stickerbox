@@ -118,6 +118,16 @@ void main() {
     },
   );
 
+  blocTest<PackDetailBloc, PackDetailState>(
+    'StickerRemoved no-ops instead of resurrecting a pack the repository can no longer find',
+    setUp: () => when(() => repository.getPack('p1')).thenReturn(null),
+    build: buildBloc,
+    seed: () => PackDetailLoaded(_packWith(3, trayIconPath: '/tmp/tray.png'), true),
+    act: (bloc) => bloc.add(const StickerRemoved('s0')),
+    expect: () => [],
+    verify: (_) => verifyNever(() => repository.savePack(any())),
+  );
+
   // --- Additional coverage beyond the brief's template: StickersAdded and
   // TrayIconSet are the other two of the four events this bloc handles, and
   // need the same load/mutate/save/re-emit assertions as StickerRemoved.

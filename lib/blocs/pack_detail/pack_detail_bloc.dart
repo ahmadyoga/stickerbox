@@ -47,7 +47,8 @@ class PackDetailBloc extends Bloc<PackDetailEvent, PackDetailState> {
   ) async {
     final current = state;
     if (current is! PackDetailLoaded) return;
-    final pack = repository.getPack(current.pack.id) ?? current.pack;
+    final pack = repository.getPack(current.pack.id);
+    if (pack == null) return;
     mutate(pack);
     await repository.savePack(pack);
     emit(PackDetailLoaded(pack, _canAdd(pack)));
@@ -69,7 +70,8 @@ class PackDetailBloc extends Bloc<PackDetailEvent, PackDetailState> {
   Future<void> _onTrayIconSet(TrayIconSet event, Emitter<PackDetailState> emit) async {
     final current = state;
     if (current is! PackDetailLoaded) return;
-    final pack = repository.getPack(current.pack.id) ?? current.pack;
+    final pack = repository.getPack(current.pack.id);
+    if (pack == null) return;
     final dir = await getApplicationDocumentsDirectory();
     final trayIconPath = p.join(dir.path, 'stickers', '${_newId()}_tray.png');
     await Directory(p.dirname(trayIconPath)).create(recursive: true);
