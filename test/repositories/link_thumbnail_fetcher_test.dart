@@ -1,3 +1,6 @@
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:mocktail/mocktail.dart';
@@ -71,6 +74,48 @@ void main() {
         throwsA(isA<LinkThumbnailException>()),
       );
       verifyNever(() => client.get(any(), headers: any(named: 'headers')));
+    });
+  });
+
+  group('downloadImage', () {
+    test('downloads and writes the image file successfully', () async {
+      final testBytes = Uint8List.fromList([1, 2, 3, 4, 5]);
+      when(() => client.get(any())).thenAnswer(
+        (_) async => http.Response.bytes(testBytes, 200),
+      );
+
+      final tempDir = Directory.systemTemp;
+      final tempFile = File(
+        '${tempDir.path}/test_image_${DateTime.now().millisecondsSinceEpoch}.jpg',
+      );
+
+      try {
+        await fetcher.downloadImage('https://example.com/image.jpg', tempFile.path);
+
+        expect(tempFile.existsSync(), isTrue);
+        final writtenBytes = await tempFile.readAsBytes();
+        expect(writtenBytes, testBytes);
+      } finally {
+        if (tempFile.existsSync()) {
+          tempFile.deleteSync();
+        }
+      }
+    });
+
+    test('throws on a non-200 response', () async {
+      when(() => client.get(any())).thenAnswer(
+        (_) async => http.Response('', 404),
+      );
+
+      final tempDir = Directory.systemTemp;
+      final tempFile = File(
+        '${tempDir.path}/test_image_${DateTime.now().millisecondsSinceEpoch}.jpg',
+      );
+
+      expect(
+        () => fetcher.downloadImage('https://example.com/image.jpg', tempFile.path),
+        throwsA(isA<LinkThumbnailException>()),
+      );
     });
   });
 }
