@@ -47,6 +47,7 @@ dependencies:
   http: ^1.6.0
   html: ^0.15.6
   receive_sharing_intent: ^1.9.0
+  path: ^1.9.1
 
 dev_dependencies:
   flutter_test:
@@ -61,7 +62,6 @@ dev_dependencies:
   bloc_test: ^10.0.0
   mocktail: ^1.0.5
   path_provider_platform_interface: ^2.1.2
-  path: ^1.9.1
   integration_test:
     sdk: flutter
 
