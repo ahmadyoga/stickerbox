@@ -11,6 +11,17 @@ class StickerProcessor {
   static const stickerDimension = 512;
   static const animatedTargetBytes = 500 * 1024;
   static const maxAnimatedFrames = 24; // ~3s at 8fps, well under WhatsApp's cap
+  static const trayDimension = 96;
+
+  /// Resizes an image file into a 96x96 PNG tray icon.
+  Future<void> encodeTrayIcon(String inputPath, String outputPath) async {
+    final source = img.decodeImage(await File(inputPath).readAsBytes());
+    if (source == null) {
+      throw StickerTooLargeException('Could not decode tray icon image');
+    }
+    final resized = img.copyResize(source, width: trayDimension, height: trayDimension);
+    await File(outputPath).writeAsBytes(img.encodePng(resized));
+  }
 
   /// Encodes a single image file into a WhatsApp-compliant static WebP
   /// sticker, writing the result to [outputPath].
