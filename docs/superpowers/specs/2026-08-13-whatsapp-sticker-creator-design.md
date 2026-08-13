@@ -90,9 +90,15 @@ stores only metadata and file paths, not blobs.
 
 ## WhatsApp handoff
 
-- **Android:** a small Kotlin `ContentProvider` (boilerplate, generated
-  once) serves pack/sticker data from Hive + the sticker files; tapping
-  "Add to WhatsApp" fires the intent WhatsApp expects
+- **Android:** requires a `ContentProvider` implementing WhatsApp's exact
+  contract (specific URIs/columns per their published sample app at
+  github.com/WhatsApp/stickers) plus an intent
+  (`com.whatsapp.intent.action.ENQUEUE_STICKER_PACK`) to trigger the add UI.
+  At implementation time, first check for a maintained Flutter plugin that
+  bundles this native contract (e.g. `whatsapp_stickers_handler`); fall back
+  to hand-writing the Kotlin `ContentProvider` against WhatsApp's sample
+  only if no current plugin fits. Either way it reads pack/sticker data from
+  Hive + the sticker files.
 - **iOS:** writes the pack data to `UIPasteboard` with WhatsApp's expected
   keys, then opens the `whatsapp://stickerPack` URL scheme — no native
   App Extension needed on either platform, just platform channels
