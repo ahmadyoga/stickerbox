@@ -2705,10 +2705,7 @@ class _PackDetailScreenState extends State<PackDetailScreen> {
       aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
     );
     if (cropped == null || !context.mounted) return;
-    final outputPath = '${cropped.path}_tray.png';
-    await context.read<StickerProcessor>().encodeTrayIcon(cropped.path, outputPath);
-    if (!context.mounted) return;
-    context.read<PackDetailBloc>().add(TrayIconSet(outputPath));
+    context.read<PackDetailBloc>().add(TrayIconSet(cropped.path));
   }
 
   Future<void> _addToWhatsApp(BuildContext context, PackDetailLoaded state) async {
