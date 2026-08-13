@@ -2353,14 +2353,29 @@ git commit -m "Add Android WhatsApp handoff (ContentProvider + ENQUEUE_STICKER_P
 - Consumes: the `sticker_creator/whatsapp` MethodChannel calls `isWhatsAppInstalled` / `addPack` defined in Task 13.
 - Produces: a working iOS "Add to WhatsApp" handoff via `UIPasteboard` + `whatsapp://stickerPack`, verified manually on a device with WhatsApp installed.
 
-The general iOS protocol (write pack+sticker JSON and binary data to the general pasteboard with a short expiration, then open `whatsapp://stickerPack`) is well-established, but WhatsApp's exact pasteboard dictionary key names are documented on WhatsApp's own iOS third-party-sticker integration guide and can be revised by WhatsApp independently of this plan — **before writing code, look up the current guide and confirm the key names below still match**; adjust the dictionary keys in Step 1 to whatever the current guide specifies if they've changed.
+**Verified against WhatsApp's own reference implementation** (`WhatsApp/stickers` on GitHub, `iOS/WAStickersThirdParty/Interoperability.swift` and `iOS/README.md`) — the real contract differs from a naive multi-asset design: WhatsApp expects **one** pasteboard item under the type key `net.whatsapp.third-party.sticker-pack`, containing **one JSON blob with image data base64-encoded inline** (not separate pasteboard entries referenced by filename). Only one sticker pack can be sent at a time, which matches this app's one-pack-per-tap "Add to WhatsApp" flow. The confirmed JSON shape:
 
-- [ ] **Step 1: Confirm current pasteboard contract, then write the handoff in `AppDelegate.swift`**
+```json
+{
+  "identifier": "...",
+  "name": "...",
+  "publisher": "...",
+  "tray_image": "<base64 PNG>",
+  "stickers": [
+    { "image_data": "<base64 WebP>", "emojis": [] }
+  ]
+}
+```
+(`tray_image` is base64 **PNG**; each sticker's `image_data` is base64 **WebP**. Optional fields like `ios_app_store_link`/`publisher_website` are omitted here since this app doesn't have them.)
+
+- [ ] **Step 1: Write the handoff in `AppDelegate.swift`**
 
 Add this above `AppDelegate`:
 
 ```swift
 import UIKit
+
+private let pasteboardStickerPackType = "net.whatsapp.third-party.sticker-pack"
 
 struct WhatsAppStickerExporter {
     static func isInstalled() -> Bool {
@@ -2380,30 +2395,30 @@ struct WhatsAppStickerExporter {
             return
         }
 
-        var stickerJson: [[String: Any]] = []
-        var pasteboardItems: [String: Any] = [:]
-
         guard let trayData = FileManager.default.contents(atPath: trayIconPath) else {
             completion(false)
             return
         }
-        pasteboardItems["tray_\(packId)"] = trayData
 
-        for (index, sticker) in stickers.enumerated() {
+        var stickerJson: [[String: Any]] = []
+        for sticker in stickers {
             guard let filePath = sticker["filePath"] as? String,
                   let data = FileManager.default.contents(atPath: filePath) else { continue }
-            let fileName = "sticker_\(packId)_\(index).webp"
-            pasteboardItems[fileName] = data
-            stickerJson.append(["image_file_name": fileName, "emojis": []])
+            stickerJson.append([
+                "image_data": data.base64EncodedString(),
+                "emojis": [],
+            ])
+        }
+        guard !stickerJson.isEmpty else {
+            completion(false)
+            return
         }
 
         let packJson: [String: Any] = [
             "identifier": packId,
             "name": name,
             "publisher": publisher,
-            "tray_image_file_name": "tray_\(packId)",
-            "image_data_version": "1",
-            "avoid_cache": false,
+            "tray_image": trayData.base64EncodedString(),
             "stickers": stickerJson,
         ]
         guard let packData = try? JSONSerialization.data(withJSONObject: packJson) else {
@@ -2411,14 +2426,12 @@ struct WhatsAppStickerExporter {
             return
         }
 
-        var items = pasteboardItems.mapValues { $0 as Any }
-        items["sticker_pack"] = packData
-
         UIPasteboard.general.setItems(
-            [items.compactMapValues { $0 as? Data }].map { dict in
-                Dictionary(uniqueKeysWithValues: dict.map { ($0.key, $0.value) })
-            },
-            options: [.expirationDate: Date().addingTimeInterval(60)]
+            [[pasteboardStickerPackType: packData]],
+            options: [
+                .localOnly: true,
+                .expirationDate: Date().addingTimeInterval(60),
+            ]
         )
 
         guard let url = URL(string: "whatsapp://stickerPack") else {
