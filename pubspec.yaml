@@ -61,6 +61,9 @@ dev_dependencies:
   bloc_test: ^10.0.0
   mocktail: ^1.0.5
   path_provider_platform_interface: ^2.1.2
+  path: ^1.9.1
+  integration_test:
+    sdk: flutter
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -77,6 +80,12 @@ flutter:
   # assets:
   #   - images/a_dot_burr.jpeg
   #   - images/a_dot_ham.jpeg
+
+  # Bundled so on-device integration tests can load real fixture images
+  # (flutter_image_compress needs a real platform channel, unavailable
+  # under plain `flutter test`).
+  assets:
+    - test/fixtures/sample.jpg
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
