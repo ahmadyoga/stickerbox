@@ -16,7 +16,7 @@ class StickerContentProvider : ContentProvider() {
     private fun packsFile() = File(context!!.filesDir, "whatsapp_export/packs.json")
 
     private fun readPacks(): JSONObject =
-        JSONObject(packsFile().readText())
+        if (packsFile().exists()) JSONObject(packsFile().readText()) else JSONObject()
 
     override fun onCreate(): Boolean = true
 
@@ -43,7 +43,7 @@ class StickerContentProvider : ContentProvider() {
             val pack = packs.getJSONObject(id)
             cursor.addRow(arrayOf(
                 id, pack.getString("name"), pack.getString("publisher"),
-                pack.getString("trayIconFileName"), "", "", "", "", "", "",
+                pack.optString("trayIconFileName"), "", "", "", "", "", "",
                 "1", 0, if (pack.getBoolean("isAnimated")) 1 else 0,
             ))
         }
@@ -53,7 +53,7 @@ class StickerContentProvider : ContentProvider() {
     private fun queryStickers(packId: String?): Cursor {
         val cursor = MatrixCursor(arrayOf("sticker_file_name", "sticker_emoji"))
         if (packId == null) return cursor
-        val pack = readPacks().getJSONObject(packId)
+        val pack = readPacks().optJSONObject(packId) ?: return cursor
         val stickers = pack.getJSONArray("stickers")
         for (i in 0 until stickers.length()) {
             cursor.addRow(arrayOf(stickers.getJSONObject(i).getString("fileName"), ""))
@@ -66,15 +66,16 @@ class StickerContentProvider : ContentProvider() {
         if (segments.getOrNull(0) != "stickers_asset") return null
         val packId = segments.getOrNull(1) ?: return null
         val fileName = segments.getOrNull(2) ?: return null
-        val pack = readPacks().getJSONObject(packId)
-        val filePath = if (fileName == pack.getString("trayIconFileName")) {
-            pack.getString("trayIconPath")
+        val pack = readPacks().optJSONObject(packId) ?: return null
+        val trayIconFileName = pack.optString("trayIconFileName")
+        val filePath = if (trayIconFileName.isNotEmpty() && fileName == trayIconFileName) {
+            pack.optString("trayIconPath").ifEmpty { return null }
         } else {
             val stickers = pack.getJSONArray("stickers")
             (0 until stickers.length())
                 .map { stickers.getJSONObject(it) }
-                .first { it.getString("fileName") == fileName }
-                .getString("filePath")
+                .firstOrNull { it.getString("fileName") == fileName }
+                ?.getString("filePath") ?: return null
         }
         val pfd = ParcelFileDescriptor.open(File(filePath), ParcelFileDescriptor.MODE_READ_ONLY)
         return AssetFileDescriptor(pfd, 0, AssetFileDescriptor.UNKNOWN_LENGTH)
