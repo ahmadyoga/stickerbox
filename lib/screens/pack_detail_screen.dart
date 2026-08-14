@@ -89,18 +89,30 @@ class _PackDetailScreenState extends State<PackDetailScreen> {
             children: [
               FloatingActionButton(
                 heroTag: 'add-sticker',
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => BlocProvider(
-                      create: (context) => ImportBloc(
-                        importRepository: ImportRepository(),
-                        stickerProcessor: context.read<StickerProcessor>(),
-                        thumbnailFetcher: LinkThumbnailFetcher(),
+                onPressed: () {
+                  // Navigator.push builds the new route as a sibling subtree off the
+                  // Navigator's Overlay, not a descendant of this route — so the
+                  // BlocProvider<PackDetailBloc> wrapping this screen (set up at its
+                  // own push site) isn't visible via context.read inside the pushed
+                  // route. Capture the existing bloc here and re-provide it by value.
+                  final packDetailBloc = context.read<PackDetailBloc>();
+                  final stickerProcessor = context.read<StickerProcessor>();
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => BlocProvider.value(
+                        value: packDetailBloc,
+                        child: BlocProvider(
+                          create: (context) => ImportBloc(
+                            importRepository: ImportRepository(),
+                            stickerProcessor: stickerProcessor,
+                            thumbnailFetcher: LinkThumbnailFetcher(),
+                          ),
+                          child: ImportScreen(packId: widget.packId),
+                        ),
                       ),
-                      child: ImportScreen(packId: widget.packId),
                     ),
-                  ),
-                ),
+                  );
+                },
                 child: const Icon(Icons.add_photo_alternate),
               ),
               const SizedBox(height: 12),
