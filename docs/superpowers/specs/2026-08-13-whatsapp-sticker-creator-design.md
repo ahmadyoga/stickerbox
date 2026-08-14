@@ -62,12 +62,20 @@ stores only metadata and file paths, not blobs.
   assigned to a pack (existing or newly created)
 
 **Link import** — two entry points, same downstream handling:
-- **Share sheet:** `receive_sharing_intent` (Android intent-filters + its
-  bundled iOS share extension) delivers a shared URL when the user taps
-  Share inside TikTok/Instagram/Pinterest and picks this app
+- **Share sheet:** `receive_sharing_intent` (Android intent-filters) delivers
+  a shared URL when the user taps Share inside TikTok/Instagram/Pinterest
+  and picks this app. **Android only for v1** — the iOS side additionally
+  needs a Share Extension Xcode target (new target, App Groups capability,
+  entitlements), which is inherently a GUI/interactive Xcode-project
+  operation, not something safely scriptable. Paste URL (below) is a full
+  substitute on iOS, so this was accepted as a documented v1 platform gap
+  rather than risking automated `.pbxproj` surgery for one of two link-entry
+  points. Can be added later by following `receive_sharing_intent`'s README
+  to set up the Xcode target manually.
 - **Paste URL:** a text field validates the URL's domain, then fetches the
   page and extracts `og:image` (falling back to platform oEmbed endpoints
-  where available, e.g. TikTok's oEmbed `thumbnail_url`)
+  where available, e.g. TikTok's oEmbed `thumbnail_url`). Works on both
+  platforms.
 - Both paths yield a static thumbnail image only. The user previews it and
   confirms before it enters the same pipeline as a direct static import.
 
