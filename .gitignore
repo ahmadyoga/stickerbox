@@ -46,3 +46,6 @@ app.*.map.json
 
 # superpowers subagent-driven-development scratch workspace
 /.superpowers/
+
+# FVM Version Cache
+.fvm/
