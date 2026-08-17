@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:image_cropper/image_cropper.dart';
+import 'crop_screen.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../blocs/import/import_bloc.dart';
@@ -34,12 +34,15 @@ class _PackDetailScreenState extends State<PackDetailScreen> {
     final picker = ImagePicker();
     final picked = await picker.pickImage(source: ImageSource.gallery);
     if (picked == null || !context.mounted) return;
-    final cropped = await ImageCropper().cropImage(
-      sourcePath: picked.path,
-      aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
+    final packDetailBloc = context.read<PackDetailBloc>();
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => BlocProvider.value(
+          value: packDetailBloc,
+          child: CropScreen(sourcePath: picked.path),
+        ),
+      ),
     );
-    if (cropped == null || !context.mounted) return;
-    context.read<PackDetailBloc>().add(TrayIconSet(cropped.path));
   }
 
   Future<void> _addToWhatsApp(BuildContext context, PackDetailState state) async {
