@@ -41,7 +41,7 @@ dependencies:
   path_provider: ^2.1.6
   image_picker: ^1.2.3
   file_picker: ^11.0.3
-  image_cropper: ^12.2.1
+  crop_your_image: ^2.0.0
   flutter_image_compress: ^2.5.1
   image: ^4.9.1
   http: ^1.6.0
