@@ -17,3 +17,7 @@ Future<Box<StickerPack>> setUpHive() async {
   }
   return Hive.openBox<StickerPack>(packsBoxName);
 }
+
+const settingsBoxName = 'settings';
+
+Future<Box> setUpSettingsBox() => Hive.openBox(settingsBoxName);

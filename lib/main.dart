@@ -4,23 +4,27 @@ import 'package:hive/hive.dart';
 
 import 'blocs/pack_list/pack_list_bloc.dart';
 import 'blocs/pack_list/pack_list_event.dart';
+import 'blocs/theme/theme_cubit.dart';
 import 'hive/hive_setup.dart';
 import 'models/sticker_pack.dart';
 import 'repositories/pack_repository.dart';
 import 'repositories/sticker_processor.dart';
 import 'repositories/whatsapp_handoff.dart';
 import 'screens/pack_list_screen.dart';
+import 'theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final box = await setUpHive();
-  runApp(StickerCreatorApp(packsBox: box));
+  final settingsBox = await setUpSettingsBox();
+  runApp(StickerCreatorApp(packsBox: box, settingsBox: settingsBox));
 }
 
 class StickerCreatorApp extends StatelessWidget {
-  const StickerCreatorApp({super.key, required this.packsBox});
+  const StickerCreatorApp({super.key, required this.packsBox, required this.settingsBox});
 
   final Box<StickerPack> packsBox;
+  final Box settingsBox;
 
   @override
   Widget build(BuildContext context) {
@@ -30,14 +34,19 @@ class StickerCreatorApp extends StatelessWidget {
         RepositoryProvider(create: (_) => StickerProcessor()),
         RepositoryProvider(create: (_) => WhatsAppHandoff()),
       ],
-      child: Builder(
-        builder: (context) => MaterialApp(
-          title: 'Sticker Creator',
-          theme: ThemeData(colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple)),
-          home: BlocProvider(
-            create: (context) => PackListBloc(context.read<PackRepository>())
-              ..add(const PackListLoadRequested()),
-            child: const PackListScreen(),
+      child: BlocProvider(
+        create: (_) => ThemeCubit(settingsBox),
+        child: BlocBuilder<ThemeCubit, ThemeMode>(
+          builder: (context, themeMode) => MaterialApp(
+            title: 'Stickerbox',
+            theme: buildTheme(dark: false),
+            darkTheme: buildTheme(dark: true),
+            themeMode: themeMode,
+            home: BlocProvider(
+              create: (context) => PackListBloc(context.read<PackRepository>())
+                ..add(const PackListLoadRequested()),
+              child: const PackListScreen(),
+            ),
           ),
         ),
       ),
