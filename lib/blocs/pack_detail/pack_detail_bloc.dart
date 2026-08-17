@@ -18,6 +18,8 @@ class PackDetailBloc extends Bloc<PackDetailEvent, PackDetailState> {
     on<StickersAdded>(_onStickersAdded);
     on<StickerRemoved>(_onStickerRemoved);
     on<TrayIconSet>(_onTrayIconSet);
+    on<PackRenameRequested>(_onRenameRequested);
+    on<PackDeleteRequested>(_onDeleteRequested);
   }
 
   final PackRepository repository;
@@ -79,5 +81,15 @@ class PackDetailBloc extends Bloc<PackDetailEvent, PackDetailState> {
     pack.trayIconPath = trayIconPath;
     await repository.savePack(pack);
     emit(PackDetailLoaded(pack, _canAdd(pack)));
+  }
+
+  Future<void> _onRenameRequested(PackRenameRequested event, Emitter<PackDetailState> emit) =>
+      _mutate(emit, (pack) => pack.name = event.newName);
+
+  Future<void> _onDeleteRequested(PackDeleteRequested event, Emitter<PackDetailState> emit) async {
+    final current = state;
+    if (current is! PackDetailLoaded) return;
+    await repository.deletePack(current.pack.id);
+    emit(const PackDetailNotFound());
   }
 }

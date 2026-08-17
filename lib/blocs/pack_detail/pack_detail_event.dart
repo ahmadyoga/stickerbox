@@ -45,3 +45,16 @@ class TrayIconSet extends PackDetailEvent {
   @override
   List<Object?> get props => [croppedImagePath];
 }
+
+class PackRenameRequested extends PackDetailEvent {
+  const PackRenameRequested(this.newName);
+
+  final String newName;
+
+  @override
+  List<Object?> get props => [newName];
+}
+
+class PackDeleteRequested extends PackDetailEvent {
+  const PackDeleteRequested();
+}

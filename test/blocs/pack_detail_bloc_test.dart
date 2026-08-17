@@ -176,4 +176,35 @@ void main() {
       expect(saved.trayIconPath, isNotNull);
     },
   );
+
+  blocTest<PackDetailBloc, PackDetailState>(
+    'PackRenameRequested renames and re-saves the pack',
+    setUp: () {
+      when(() => repository.getPack('p1')).thenReturn(_packWith(3, trayIconPath: '/tmp/tray.png'));
+      when(() => repository.savePack(any())).thenAnswer((_) async {});
+    },
+    build: buildBloc,
+    seed: () => PackDetailLoaded(_packWith(3, trayIconPath: '/tmp/tray.png'), true),
+    act: (bloc) => bloc.add(const PackRenameRequested('New Name')),
+    expect: () => [
+      isA<PackDetailLoaded>().having((s) => s.pack.name, 'name', 'New Name'),
+    ],
+    verify: (_) {
+      final captured = verify(() => repository.savePack(captureAny())).captured;
+      expect((captured.single as StickerPack).name, 'New Name');
+    },
+  );
+
+  blocTest<PackDetailBloc, PackDetailState>(
+    'PackDeleteRequested deletes the pack and emits PackDetailNotFound',
+    setUp: () {
+      when(() => repository.getPack('p1')).thenReturn(_packWith(3, trayIconPath: '/tmp/tray.png'));
+      when(() => repository.deletePack('p1')).thenAnswer((_) async {});
+    },
+    build: buildBloc,
+    seed: () => PackDetailLoaded(_packWith(3, trayIconPath: '/tmp/tray.png'), true),
+    act: (bloc) => bloc.add(const PackDeleteRequested()),
+    expect: () => [const PackDetailNotFound()],
+    verify: (_) => verify(() => repository.deletePack('p1')).called(1),
+  );
 }
