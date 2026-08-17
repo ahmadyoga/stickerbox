@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import '../../models/sticker.dart';
 import '../../repositories/import_repository.dart';
 import '../../repositories/link_thumbnail_fetcher.dart';
 import '../../repositories/sticker_processor.dart';
@@ -41,14 +42,16 @@ class ImportBloc extends Bloc<ImportEvent, ImportState> {
     emit(const ImportProcessing());
     try {
       final picked = await importRepository.pickStaticImages();
+      final total = picked.length;
       final outputs = <String>[];
-      for (final inputPath in picked) {
+      for (var i = 0; i < picked.length; i++) {
         final outputPath = await _newOutputPath('webp');
         await Directory(p.dirname(outputPath)).create(recursive: true);
-        await stickerProcessor.encodeStatic(inputPath, outputPath);
+        await stickerProcessor.encodeStatic(picked[i], outputPath);
         outputs.add(outputPath);
+        emit(ImportProcessing(current: i + 1, total: total));
       }
-      emit(ImportReady(outputs));
+      emit(ImportReady(outputs, StickerType.static_));
     } catch (e) {
       emit(ImportFailure(e.toString()));
     }
@@ -65,7 +68,7 @@ class ImportBloc extends Bloc<ImportEvent, ImportState> {
       final outputPath = await _newOutputPath('webp');
       await Directory(p.dirname(outputPath)).create(recursive: true);
       await stickerProcessor.encodeAnimatedGif(inputPath, outputPath);
-      emit(ImportReady([outputPath]));
+      emit(ImportReady([outputPath], StickerType.animated));
     } catch (e) {
       emit(ImportFailure(e.toString()));
     }
@@ -97,7 +100,7 @@ class ImportBloc extends Bloc<ImportEvent, ImportState> {
     try {
       final outputPath = await _newOutputPath('webp');
       await stickerProcessor.encodeStatic(pending, outputPath);
-      emit(ImportReady([outputPath]));
+      emit(ImportReady([outputPath], StickerType.static_));
     } catch (e) {
       emit(ImportFailure(e.toString()));
     }

@@ -1,5 +1,7 @@
 import 'package:equatable/equatable.dart';
 
+import '../../models/sticker.dart';
+
 sealed class ImportState extends Equatable {
   const ImportState();
 
@@ -12,7 +14,13 @@ class ImportInitial extends ImportState {
 }
 
 class ImportProcessing extends ImportState {
-  const ImportProcessing();
+  const ImportProcessing({this.current, this.total});
+
+  final int? current;
+  final int? total;
+
+  @override
+  List<Object?> get props => [current, total];
 }
 
 class ImportThumbnailPreview extends ImportState {
@@ -25,12 +33,13 @@ class ImportThumbnailPreview extends ImportState {
 }
 
 class ImportReady extends ImportState {
-  const ImportReady(this.processedFilePaths);
+  const ImportReady(this.processedFilePaths, this.type);
 
   final List<String> processedFilePaths;
+  final StickerType type;
 
   @override
-  List<Object?> get props => [processedFilePaths];
+  List<Object?> get props => [processedFilePaths, type];
 }
 
 class ImportFailure extends ImportState {
