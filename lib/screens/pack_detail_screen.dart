@@ -42,7 +42,7 @@ class _PackDetailScreenState extends State<PackDetailScreen> {
     context.read<PackDetailBloc>().add(TrayIconSet(cropped.path));
   }
 
-  Future<void> _addToWhatsApp(BuildContext context, PackDetailLoaded state) async {
+  Future<void> _addToWhatsApp(BuildContext context, PackDetailState state) async {
     final handoff = context.read<WhatsAppHandoff>();
     if (!await handoff.isWhatsAppInstalled()) {
       if (context.mounted) {
@@ -52,22 +52,22 @@ class _PackDetailScreenState extends State<PackDetailScreen> {
       }
       return;
     }
-    await handoff.addPack(state.pack);
+    await handoff.addPack(state.pack!);
   }
 
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<PackDetailBloc, PackDetailState>(
       builder: (context, state) {
-        if (state is PackDetailNotFound) {
+        if (state.status == PackDetailStatus.notFound) {
           return const Scaffold(body: Center(child: Text('Pack not found')));
         }
-        if (state is! PackDetailLoaded) {
+        if (state.status != PackDetailStatus.loaded) {
           return const Scaffold(body: Center(child: CircularProgressIndicator()));
         }
         return Scaffold(
           appBar: AppBar(
-            title: Text(state.pack.name),
+            title: Text(state.pack!.name),
             actions: [
               IconButton(icon: const Icon(Icons.image), onPressed: () => _setTrayIcon(context)),
             ],
@@ -75,9 +75,9 @@ class _PackDetailScreenState extends State<PackDetailScreen> {
           body: GridView.builder(
             padding: const EdgeInsets.all(8),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3),
-            itemCount: state.pack.stickers.length,
+            itemCount: state.pack!.stickers.length,
             itemBuilder: (context, index) {
-              final sticker = state.pack.stickers[index];
+              final sticker = state.pack!.stickers[index];
               return StickerGridTile(
                 filePath: sticker.filePath,
                 onRemove: () => context.read<PackDetailBloc>().add(StickerRemoved(sticker.id)),

@@ -6,7 +6,7 @@ import 'pack_list_event.dart';
 import 'pack_list_state.dart';
 
 class PackListBloc extends Bloc<PackListEvent, PackListState> {
-  PackListBloc(this._repository) : super(const PackListLoading()) {
+  PackListBloc(this._repository) : super(const PackListState()) {
     on<PackListLoadRequested>(_onLoad);
     on<PackCreated>(_onCreated);
     on<PackRenamed>(_onRenamed);
@@ -19,7 +19,7 @@ class PackListBloc extends Bloc<PackListEvent, PackListState> {
       '${DateTime.now().microsecondsSinceEpoch}-${identityHashCode(this)}';
 
   void _emitLoaded(Emitter<PackListState> emit) {
-    emit(PackListLoaded(_repository.getAllPacks()));
+    emit(PackListState(status: PackListStatus.loaded, packs: _repository.getAllPacks()));
   }
 
   Future<void> _onLoad(PackListLoadRequested event, Emitter<PackListState> emit) async {

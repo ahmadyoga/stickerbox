@@ -25,7 +25,9 @@ void main() {
     ),
     build: () => PackListBloc(repository),
     act: (bloc) => bloc.add(const PackListLoadRequested()),
-    expect: () => [isA<PackListLoaded>()],
+    expect: () => [
+      isA<PackListState>().having((s) => s.status, 'status', PackListStatus.loaded),
+    ],
   );
 
   blocTest<PackListBloc, PackListState>(
@@ -84,6 +86,6 @@ void main() {
     },
     build: () => PackListBloc(repository),
     act: (bloc) => bloc.add(const PackDeleted('1')),
-    expect: () => [const PackListLoaded([])],
+    expect: () => [const PackListState(status: PackListStatus.loaded, packs: [])],
   );
 }

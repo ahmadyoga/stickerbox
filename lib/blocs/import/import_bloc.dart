@@ -16,7 +16,7 @@ class ImportBloc extends Bloc<ImportEvent, ImportState> {
     required this.importRepository,
     required this.stickerProcessor,
     required this.thumbnailFetcher,
-  }) : super(const ImportInitial()) {
+  }) : super(const ImportState()) {
     on<PickStaticImagesRequested>(_onPickStaticImages);
     on<PickGifRequested>(_onPickGif);
     on<LinkUrlSubmitted>(_onLinkUrlSubmitted);
@@ -39,7 +39,7 @@ class ImportBloc extends Bloc<ImportEvent, ImportState> {
     PickStaticImagesRequested event,
     Emitter<ImportState> emit,
   ) async {
-    emit(const ImportProcessing());
+    emit(const ImportState(status: ImportStatus.processing));
     try {
       final picked = await importRepository.pickStaticImages();
       final total = picked.length;
@@ -49,44 +49,46 @@ class ImportBloc extends Bloc<ImportEvent, ImportState> {
         await Directory(p.dirname(outputPath)).create(recursive: true);
         await stickerProcessor.encodeStatic(picked[i], outputPath);
         outputs.add(outputPath);
-        emit(ImportProcessing(current: i + 1, total: total));
+        emit(ImportState(status: ImportStatus.processing, current: i + 1, total: total));
       }
-      emit(ImportReady(outputs, StickerType.static_));
+      emit(ImportState(status: ImportStatus.ready, processedFilePaths: outputs, type: StickerType.static_));
     } catch (e) {
-      emit(ImportFailure(e.toString()));
+      emit(ImportState(status: ImportStatus.failure, failureMessage: e.toString()));
     }
   }
 
   Future<void> _onPickGif(PickGifRequested event, Emitter<ImportState> emit) async {
-    emit(const ImportProcessing());
+    emit(const ImportState(status: ImportStatus.processing));
     try {
       final inputPath = await importRepository.pickGifFile();
       if (inputPath == null) {
-        emit(const ImportInitial());
+        emit(const ImportState());
         return;
       }
       final outputPath = await _newOutputPath('webp');
       await Directory(p.dirname(outputPath)).create(recursive: true);
       await stickerProcessor.encodeAnimatedGif(inputPath, outputPath);
-      emit(ImportReady([outputPath], StickerType.animated));
+      emit(
+        ImportState(status: ImportStatus.ready, processedFilePaths: [outputPath], type: StickerType.animated),
+      );
     } catch (e) {
-      emit(ImportFailure(e.toString()));
+      emit(ImportState(status: ImportStatus.failure, failureMessage: e.toString()));
     }
   }
 
   Future<void> _onLinkUrlSubmitted(LinkUrlSubmitted event, Emitter<ImportState> emit) async {
-    emit(const ImportProcessing());
+    emit(const ImportState(status: ImportStatus.processing));
     try {
       final thumbnailUrl = await thumbnailFetcher.fetchThumbnailUrl(event.url);
       final localPath = await _newOutputPath('jpg');
       await Directory(p.dirname(localPath)).create(recursive: true);
       await thumbnailFetcher.downloadImage(thumbnailUrl, localPath);
       _pendingThumbnailPath = localPath;
-      emit(ImportThumbnailPreview(localPath));
+      emit(ImportState(status: ImportStatus.thumbnailPreview, thumbnailPath: localPath));
     } on LinkThumbnailException catch (e) {
-      emit(ImportFailure(e.message));
+      emit(ImportState(status: ImportStatus.failure, failureMessage: e.message));
     } catch (e) {
-      emit(ImportFailure(e.toString()));
+      emit(ImportState(status: ImportStatus.failure, failureMessage: e.toString()));
     }
   }
 
@@ -96,13 +98,13 @@ class ImportBloc extends Bloc<ImportEvent, ImportState> {
   ) async {
     final pending = _pendingThumbnailPath;
     if (pending == null) return;
-    emit(const ImportProcessing());
+    emit(const ImportState(status: ImportStatus.processing));
     try {
       final outputPath = await _newOutputPath('webp');
       await stickerProcessor.encodeStatic(pending, outputPath);
-      emit(ImportReady([outputPath], StickerType.static_));
+      emit(ImportState(status: ImportStatus.ready, processedFilePaths: [outputPath], type: StickerType.static_));
     } catch (e) {
-      emit(ImportFailure(e.toString()));
+      emit(ImportState(status: ImportStatus.failure, failureMessage: e.toString()));
     }
   }
 }

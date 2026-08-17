@@ -13,7 +13,7 @@ import 'pack_detail_state.dart';
 
 class PackDetailBloc extends Bloc<PackDetailEvent, PackDetailState> {
   PackDetailBloc({required this.repository, required this.stickerProcessor})
-      : super(const PackDetailLoading()) {
+      : super(const PackDetailState()) {
     on<PackDetailLoadRequested>(_onLoad);
     on<StickersAdded>(_onStickersAdded);
     on<StickerRemoved>(_onStickerRemoved);
@@ -33,10 +33,10 @@ class PackDetailBloc extends Bloc<PackDetailEvent, PackDetailState> {
   Future<void> _onLoad(PackDetailLoadRequested event, Emitter<PackDetailState> emit) async {
     final pack = repository.getPack(event.packId);
     if (pack == null) {
-      emit(const PackDetailNotFound());
+      emit(const PackDetailState(status: PackDetailStatus.notFound));
       return;
     }
-    emit(PackDetailLoaded(pack, _canAdd(pack)));
+    emit(PackDetailState(status: PackDetailStatus.loaded, pack: pack, canAddToWhatsApp: _canAdd(pack)));
   }
 
   /// Loads the currently-displayed pack fresh from the repository and applies
@@ -48,12 +48,12 @@ class PackDetailBloc extends Bloc<PackDetailEvent, PackDetailState> {
     void Function(StickerPack pack) mutate,
   ) async {
     final current = state;
-    if (current is! PackDetailLoaded) return;
-    final pack = repository.getPack(current.pack.id);
+    if (current.status != PackDetailStatus.loaded || current.pack == null) return;
+    final pack = repository.getPack(current.pack!.id);
     if (pack == null) return;
     mutate(pack);
     await repository.savePack(pack);
-    emit(PackDetailLoaded(pack, _canAdd(pack)));
+    emit(PackDetailState(status: PackDetailStatus.loaded, pack: pack, canAddToWhatsApp: _canAdd(pack)));
   }
 
   Future<void> _onStickersAdded(StickersAdded event, Emitter<PackDetailState> emit) => _mutate(
@@ -71,8 +71,8 @@ class PackDetailBloc extends Bloc<PackDetailEvent, PackDetailState> {
 
   Future<void> _onTrayIconSet(TrayIconSet event, Emitter<PackDetailState> emit) async {
     final current = state;
-    if (current is! PackDetailLoaded) return;
-    final pack = repository.getPack(current.pack.id);
+    if (current.status != PackDetailStatus.loaded || current.pack == null) return;
+    final pack = repository.getPack(current.pack!.id);
     if (pack == null) return;
     final dir = await getApplicationDocumentsDirectory();
     final trayIconPath = p.join(dir.path, 'stickers', '${_newId()}_tray.png');
@@ -80,7 +80,7 @@ class PackDetailBloc extends Bloc<PackDetailEvent, PackDetailState> {
     await stickerProcessor.encodeTrayIcon(event.croppedImagePath, trayIconPath);
     pack.trayIconPath = trayIconPath;
     await repository.savePack(pack);
-    emit(PackDetailLoaded(pack, _canAdd(pack)));
+    emit(PackDetailState(status: PackDetailStatus.loaded, pack: pack, canAddToWhatsApp: _canAdd(pack)));
   }
 
   Future<void> _onRenameRequested(PackRenameRequested event, Emitter<PackDetailState> emit) =>
@@ -88,8 +88,8 @@ class PackDetailBloc extends Bloc<PackDetailEvent, PackDetailState> {
 
   Future<void> _onDeleteRequested(PackDeleteRequested event, Emitter<PackDetailState> emit) async {
     final current = state;
-    if (current is! PackDetailLoaded) return;
-    await repository.deletePack(current.pack.id);
-    emit(const PackDetailNotFound());
+    if (current.status != PackDetailStatus.loaded || current.pack == null) return;
+    await repository.deletePack(current.pack!.id);
+    emit(const PackDetailState(status: PackDetailStatus.notFound));
   }
 }

@@ -70,7 +70,9 @@ void main() {
     build: buildBloc,
     act: (bloc) => bloc.add(const PackDetailLoadRequested('p1')),
     expect: () => [
-      isA<PackDetailLoaded>().having((s) => s.canAddToWhatsApp, 'canAddToWhatsApp', isFalse),
+      isA<PackDetailState>()
+          .having((s) => s.status, 'status', PackDetailStatus.loaded)
+          .having((s) => s.canAddToWhatsApp, 'canAddToWhatsApp', isFalse),
     ],
   );
 
@@ -80,7 +82,9 @@ void main() {
     build: buildBloc,
     act: (bloc) => bloc.add(const PackDetailLoadRequested('p1')),
     expect: () => [
-      isA<PackDetailLoaded>().having((s) => s.canAddToWhatsApp, 'canAddToWhatsApp', isTrue),
+      isA<PackDetailState>()
+          .having((s) => s.status, 'status', PackDetailStatus.loaded)
+          .having((s) => s.canAddToWhatsApp, 'canAddToWhatsApp', isTrue),
     ],
   );
 
@@ -90,16 +94,18 @@ void main() {
     build: buildBloc,
     act: (bloc) => bloc.add(const PackDetailLoadRequested('p1')),
     expect: () => [
-      isA<PackDetailLoaded>().having((s) => s.canAddToWhatsApp, 'canAddToWhatsApp', isFalse),
+      isA<PackDetailState>()
+          .having((s) => s.status, 'status', PackDetailStatus.loaded)
+          .having((s) => s.canAddToWhatsApp, 'canAddToWhatsApp', isFalse),
     ],
   );
 
   blocTest<PackDetailBloc, PackDetailState>(
-    'PackDetailLoadRequested emits PackDetailNotFound for a missing pack',
+    'PackDetailLoadRequested emits notFound status for a missing pack',
     setUp: () => when(() => repository.getPack('missing')).thenReturn(null),
     build: buildBloc,
     act: (bloc) => bloc.add(const PackDetailLoadRequested('missing')),
-    expect: () => [const PackDetailNotFound()],
+    expect: () => [const PackDetailState(status: PackDetailStatus.notFound)],
   );
 
   blocTest<PackDetailBloc, PackDetailState>(
@@ -109,7 +115,11 @@ void main() {
       when(() => repository.savePack(any())).thenAnswer((_) async {});
     },
     build: buildBloc,
-    seed: () => PackDetailLoaded(_packWith(3, trayIconPath: '/tmp/tray.png'), true),
+    seed: () => PackDetailState(
+      status: PackDetailStatus.loaded,
+      pack: _packWith(3, trayIconPath: '/tmp/tray.png'),
+      canAddToWhatsApp: true,
+    ),
     act: (bloc) => bloc.add(const StickerRemoved('s0')),
     verify: (_) {
       final captured = verify(() => repository.savePack(captureAny())).captured;
@@ -122,15 +132,15 @@ void main() {
     'StickerRemoved no-ops instead of resurrecting a pack the repository can no longer find',
     setUp: () => when(() => repository.getPack('p1')).thenReturn(null),
     build: buildBloc,
-    seed: () => PackDetailLoaded(_packWith(3, trayIconPath: '/tmp/tray.png'), true),
+    seed: () => PackDetailState(
+      status: PackDetailStatus.loaded,
+      pack: _packWith(3, trayIconPath: '/tmp/tray.png'),
+      canAddToWhatsApp: true,
+    ),
     act: (bloc) => bloc.add(const StickerRemoved('s0')),
     expect: () => [],
     verify: (_) => verifyNever(() => repository.savePack(any())),
   );
-
-  // --- Additional coverage beyond the brief's template: StickersAdded and
-  // TrayIconSet are the other two of the four events this bloc handles, and
-  // need the same load/mutate/save/re-emit assertions as StickerRemoved.
 
   blocTest<PackDetailBloc, PackDetailState>(
     'StickersAdded appends processed stickers, re-saves the pack, and recomputes canAddToWhatsApp',
@@ -139,12 +149,17 @@ void main() {
       when(() => repository.savePack(any())).thenAnswer((_) async {});
     },
     build: buildBloc,
-    seed: () => PackDetailLoaded(_packWith(2, trayIconPath: '/tmp/tray.png'), false),
+    seed: () => PackDetailState(
+      status: PackDetailStatus.loaded,
+      pack: _packWith(2, trayIconPath: '/tmp/tray.png'),
+    ),
     act: (bloc) => bloc.add(
       const StickersAdded(['/tmp/new1.webp', '/tmp/new2.webp'], StickerType.static_),
     ),
     expect: () => [
-      isA<PackDetailLoaded>().having((s) => s.canAddToWhatsApp, 'canAddToWhatsApp', isTrue),
+      isA<PackDetailState>()
+          .having((s) => s.status, 'status', PackDetailStatus.loaded)
+          .having((s) => s.canAddToWhatsApp, 'canAddToWhatsApp', isTrue),
     ],
     verify: (_) {
       final captured = verify(() => repository.savePack(captureAny())).captured;
@@ -163,11 +178,13 @@ void main() {
       when(() => processor.encodeTrayIcon(any(), any())).thenAnswer((_) async {});
     },
     build: buildBloc,
-    seed: () => PackDetailLoaded(_packWith(3), false),
+    seed: () => PackDetailState(status: PackDetailStatus.loaded, pack: _packWith(3)),
     act: (bloc) => bloc.add(const TrayIconSet('/tmp/cropped.png')),
     wait: const Duration(milliseconds: 50),
     expect: () => [
-      isA<PackDetailLoaded>().having((s) => s.canAddToWhatsApp, 'canAddToWhatsApp', isTrue),
+      isA<PackDetailState>()
+          .having((s) => s.status, 'status', PackDetailStatus.loaded)
+          .having((s) => s.canAddToWhatsApp, 'canAddToWhatsApp', isTrue),
     ],
     verify: (_) {
       verify(() => processor.encodeTrayIcon('/tmp/cropped.png', any())).called(1);
@@ -184,10 +201,14 @@ void main() {
       when(() => repository.savePack(any())).thenAnswer((_) async {});
     },
     build: buildBloc,
-    seed: () => PackDetailLoaded(_packWith(3, trayIconPath: '/tmp/tray.png'), true),
+    seed: () => PackDetailState(
+      status: PackDetailStatus.loaded,
+      pack: _packWith(3, trayIconPath: '/tmp/tray.png'),
+      canAddToWhatsApp: true,
+    ),
     act: (bloc) => bloc.add(const PackRenameRequested('New Name')),
     expect: () => [
-      isA<PackDetailLoaded>().having((s) => s.pack.name, 'name', 'New Name'),
+      isA<PackDetailState>().having((s) => s.pack?.name, 'pack.name', 'New Name'),
     ],
     verify: (_) {
       final captured = verify(() => repository.savePack(captureAny())).captured;
@@ -196,15 +217,19 @@ void main() {
   );
 
   blocTest<PackDetailBloc, PackDetailState>(
-    'PackDeleteRequested deletes the pack and emits PackDetailNotFound',
+    'PackDeleteRequested deletes the pack and emits notFound status',
     setUp: () {
       when(() => repository.getPack('p1')).thenReturn(_packWith(3, trayIconPath: '/tmp/tray.png'));
       when(() => repository.deletePack('p1')).thenAnswer((_) async {});
     },
     build: buildBloc,
-    seed: () => PackDetailLoaded(_packWith(3, trayIconPath: '/tmp/tray.png'), true),
+    seed: () => PackDetailState(
+      status: PackDetailStatus.loaded,
+      pack: _packWith(3, trayIconPath: '/tmp/tray.png'),
+      canAddToWhatsApp: true,
+    ),
     act: (bloc) => bloc.add(const PackDeleteRequested()),
-    expect: () => [const PackDetailNotFound()],
+    expect: () => [const PackDetailState(status: PackDetailStatus.notFound)],
     verify: (_) => verify(() => repository.deletePack('p1')).called(1),
   );
 }

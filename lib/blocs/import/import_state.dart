@@ -2,51 +2,35 @@ import 'package:equatable/equatable.dart';
 
 import '../../models/sticker.dart';
 
-sealed class ImportState extends Equatable {
-  const ImportState();
+enum ImportStatus { initial, processing, thumbnailPreview, ready, failure }
 
-  @override
-  List<Object?> get props => [];
-}
+class ImportState extends Equatable {
+  const ImportState({
+    this.status = ImportStatus.initial,
+    this.current,
+    this.total,
+    this.thumbnailPath,
+    this.processedFilePaths,
+    this.type,
+    this.failureMessage,
+  });
 
-class ImportInitial extends ImportState {
-  const ImportInitial();
-}
-
-class ImportProcessing extends ImportState {
-  const ImportProcessing({this.current, this.total});
-
+  final ImportStatus status;
   final int? current;
   final int? total;
+  final String? thumbnailPath;
+  final List<String>? processedFilePaths;
+  final StickerType? type;
+  final String? failureMessage;
 
   @override
-  List<Object?> get props => [current, total];
-}
-
-class ImportThumbnailPreview extends ImportState {
-  const ImportThumbnailPreview(this.localPreviewPath);
-
-  final String localPreviewPath;
-
-  @override
-  List<Object?> get props => [localPreviewPath];
-}
-
-class ImportReady extends ImportState {
-  const ImportReady(this.processedFilePaths, this.type);
-
-  final List<String> processedFilePaths;
-  final StickerType type;
-
-  @override
-  List<Object?> get props => [processedFilePaths, type];
-}
-
-class ImportFailure extends ImportState {
-  const ImportFailure(this.message);
-
-  final String message;
-
-  @override
-  List<Object?> get props => [message];
+  List<Object?> get props => [
+    status,
+    current,
+    total,
+    thumbnailPath,
+    processedFilePaths,
+    type,
+    failureMessage,
+  ];
 }

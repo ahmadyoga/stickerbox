@@ -2,22 +2,14 @@ import 'package:equatable/equatable.dart';
 
 import '../../models/sticker_pack.dart';
 
-sealed class PackListState extends Equatable {
-  const PackListState();
+enum PackListStatus { loading, loaded }
 
-  @override
-  List<Object?> get props => [];
-}
+class PackListState extends Equatable {
+  const PackListState({this.status = PackListStatus.loading, this.packs = const []});
 
-class PackListLoading extends PackListState {
-  const PackListLoading();
-}
-
-class PackListLoaded extends PackListState {
-  const PackListLoaded(this.packs);
-
+  final PackListStatus status;
   final List<StickerPack> packs;
 
   @override
-  List<Object?> get props => [packs];
+  List<Object?> get props => [status, packs];
 }

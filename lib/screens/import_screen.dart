@@ -44,17 +44,17 @@ class _ImportScreenState extends State<ImportScreen> with SingleTickerProviderSt
         ),
         body: BlocConsumer<ImportBloc, ImportState>(
           listener: (context, state) {
-            if (state is ImportReady) {
+            if (state.status == ImportStatus.ready) {
               context.read<PackDetailBloc>().add(
-                    StickersAdded(state.processedFilePaths, _pendingType),
+                    StickersAdded(state.processedFilePaths!, _pendingType),
                   );
               Navigator.of(context).pop();
-            } else if (state is ImportFailure) {
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(state.message)));
+            } else if (state.status == ImportStatus.failure) {
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(state.failureMessage!)));
             }
           },
           builder: (context, state) {
-            if (state is ImportProcessing) {
+            if (state.status == ImportStatus.processing) {
               return const Center(child: CircularProgressIndicator());
             }
             return TabBarView(
@@ -91,8 +91,8 @@ class _ImportScreenState extends State<ImportScreen> with SingleTickerProviderSt
                         ),
                       ),
                       const SizedBox(height: 12),
-                      if (state is ImportThumbnailPreview) ...[
-                        Image.file(_asFile(state.localPreviewPath), height: 200),
+                      if (state.status == ImportStatus.thumbnailPreview) ...[
+                        Image.file(_asFile(state.thumbnailPath!), height: 200),
                         ElevatedButton(
                           onPressed: () {
                             _pendingType = StickerType.static_;

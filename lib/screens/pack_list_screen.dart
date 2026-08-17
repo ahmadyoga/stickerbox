@@ -46,7 +46,7 @@ class PackListScreen extends StatelessWidget {
       appBar: AppBar(title: const Text('Sticker Packs')),
       body: BlocBuilder<PackListBloc, PackListState>(
         builder: (context, state) {
-          if (state is! PackListLoaded) {
+          if (state.status != PackListStatus.loaded) {
             return const Center(child: CircularProgressIndicator());
           }
           if (state.packs.isEmpty) {

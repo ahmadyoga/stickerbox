@@ -59,7 +59,7 @@ void main() {
   );
 
   blocTest<ImportBloc, ImportState>(
-    'PickStaticImagesRequested reports current/total progress per image and emits a static ImportReady',
+    'PickStaticImagesRequested reports current/total progress per image and emits a static ready state',
     setUp: () {
       when(() => importRepository.pickStaticImages())
           .thenAnswer((_) async => ['/tmp/a.jpg', '/tmp/b.jpg']);
@@ -69,11 +69,12 @@ void main() {
     act: (bloc) => bloc.add(const PickStaticImagesRequested()),
     wait: const Duration(milliseconds: 50),
     expect: () => [
-      const ImportProcessing(),
-      const ImportProcessing(current: 1, total: 2),
-      const ImportProcessing(current: 2, total: 2),
-      isA<ImportReady>()
-          .having((s) => s.processedFilePaths.length, 'processedFilePaths.length', 2)
+      const ImportState(status: ImportStatus.processing),
+      const ImportState(status: ImportStatus.processing, current: 1, total: 2),
+      const ImportState(status: ImportStatus.processing, current: 2, total: 2),
+      isA<ImportState>()
+          .having((s) => s.status, 'status', ImportStatus.ready)
+          .having((s) => s.processedFilePaths?.length, 'processedFilePaths.length', 2)
           .having((s) => s.type, 'type', StickerType.static_),
     ],
     verify: (_) {
@@ -84,7 +85,7 @@ void main() {
   );
 
   blocTest<ImportBloc, ImportState>(
-    'PickGifRequested processes the picked GIF and emits an animated ImportReady with no progress fields',
+    'PickGifRequested processes the picked GIF and emits an animated ready state with no progress fields',
     setUp: () {
       when(() => importRepository.pickGifFile()).thenAnswer((_) async => '/tmp/a.gif');
       when(() => stickerProcessor.encodeAnimatedGif(any(), any())).thenAnswer((_) async {});
@@ -93,9 +94,10 @@ void main() {
     act: (bloc) => bloc.add(const PickGifRequested()),
     wait: const Duration(milliseconds: 50),
     expect: () => [
-      const ImportProcessing(),
-      isA<ImportReady>()
-          .having((s) => s.processedFilePaths.length, 'processedFilePaths.length', 1)
+      const ImportState(status: ImportStatus.processing),
+      isA<ImportState>()
+          .having((s) => s.status, 'status', ImportStatus.ready)
+          .having((s) => s.processedFilePaths?.length, 'processedFilePaths.length', 1)
           .having((s) => s.type, 'type', StickerType.animated),
     ],
     verify: (_) {
@@ -105,13 +107,13 @@ void main() {
   );
 
   blocTest<ImportBloc, ImportState>(
-    'PickGifRequested returns to ImportInitial when the user cancels the picker',
+    'PickGifRequested returns to the initial state when the user cancels the picker',
     setUp: () {
       when(() => importRepository.pickGifFile()).thenAnswer((_) async => null);
     },
     build: buildBloc,
     act: (bloc) => bloc.add(const PickGifRequested()),
-    expect: () => [const ImportProcessing(), const ImportInitial()],
+    expect: () => [const ImportState(status: ImportStatus.processing), const ImportState()],
     verify: (_) {
       verifyNever(() => stickerProcessor.encodeAnimatedGif(any(), any()));
     },
@@ -128,7 +130,10 @@ void main() {
     build: buildBloc,
     act: (bloc) => bloc.add(const LinkUrlSubmitted('https://www.instagram.com/p/abc')),
     wait: const Duration(milliseconds: 50),
-    expect: () => [const ImportProcessing(), isA<ImportThumbnailPreview>()],
+    expect: () => [
+      const ImportState(status: ImportStatus.processing),
+      isA<ImportState>().having((s) => s.status, 'status', ImportStatus.thumbnailPreview),
+    ],
     verify: (_) {
       verify(
         () => thumbnailFetcher.fetchThumbnailUrl('https://www.instagram.com/p/abc'),
@@ -140,7 +145,7 @@ void main() {
   );
 
   blocTest<ImportBloc, ImportState>(
-    'LinkUrlSubmitted emits ImportFailure when the fetcher throws',
+    'LinkUrlSubmitted emits a failure state when the fetcher throws',
     setUp: () {
       when(
         () => thumbnailFetcher.fetchThumbnailUrl(any()),
@@ -148,11 +153,14 @@ void main() {
     },
     build: buildBloc,
     act: (bloc) => bloc.add(const LinkUrlSubmitted('https://www.instagram.com/p/abc')),
-    expect: () => [const ImportProcessing(), const ImportFailure('No preview image found for this link')],
+    expect: () => [
+      const ImportState(status: ImportStatus.processing),
+      const ImportState(status: ImportStatus.failure, failureMessage: 'No preview image found for this link'),
+    ],
   );
 
   blocTest<ImportBloc, ImportState>(
-    'LinkThumbnailConfirmed encodes the previewed thumbnail and emits a static ImportReady',
+    'LinkThumbnailConfirmed encodes the previewed thumbnail and emits a static ready state',
     setUp: () {
       when(
         () => thumbnailFetcher.fetchThumbnailUrl(any()),
@@ -163,15 +171,17 @@ void main() {
     build: buildBloc,
     act: (bloc) async {
       bloc.add(const LinkUrlSubmitted('https://www.instagram.com/p/abc'));
-      await bloc.stream.firstWhere((s) => s is ImportThumbnailPreview);
+      await bloc.stream.firstWhere((s) => s.status == ImportStatus.thumbnailPreview);
       bloc.add(const LinkThumbnailConfirmed());
     },
     wait: const Duration(milliseconds: 50),
     expect: () => [
-      const ImportProcessing(),
-      isA<ImportThumbnailPreview>(),
-      const ImportProcessing(),
-      isA<ImportReady>().having((s) => s.type, 'type', StickerType.static_),
+      const ImportState(status: ImportStatus.processing),
+      isA<ImportState>().having((s) => s.status, 'status', ImportStatus.thumbnailPreview),
+      const ImportState(status: ImportStatus.processing),
+      isA<ImportState>()
+          .having((s) => s.status, 'status', ImportStatus.ready)
+          .having((s) => s.type, 'type', StickerType.static_),
     ],
     verify: (_) {
       verify(() => stickerProcessor.encodeStatic(any(), any())).called(1);
