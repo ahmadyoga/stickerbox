@@ -47,6 +47,20 @@ here — implementers should read it directly via the `DesignSync` MCP tool
   stickers are auto-cropped/resized by `StickerProcessor` as before, no UI
   change there).
 
+## App icon + logo mark
+
+Two source images now provided (`assets/app-icon.png`, `assets/icon.png` —
+same ghost/pocket mascot, matching the mockup's branding):
+- `assets/app-icon.png` (opaque, gradient background, square): the platform
+  launcher icon. Generated for Android/iOS via `flutter_launcher_icons` (dev
+  dependency) rather than hand-placing per-density PNGs.
+- `assets/icon.png` (transparent cutout): used as the illustration in the
+  Home and Pack-Detail empty states, standing in for the mockup's hand-drawn
+  CSS sticker/ghost animation (keyframe-animated shapes built from dozens of
+  absolutely-positioned divs) — not worth reproducing pixel-for-pixel in
+  Flutter when a real mascot asset already exists. Bundled as a normal
+  Flutter asset, not app-icon generation.
+
 ## Architecture additions
 
 ### Dark mode
