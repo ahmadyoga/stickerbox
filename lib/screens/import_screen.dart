@@ -1,14 +1,13 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../blocs/import/import_bloc.dart';
 import '../blocs/import/import_event.dart';
 import '../blocs/import/import_state.dart';
-import '../blocs/pack_detail/pack_detail_bloc.dart';
-import '../blocs/pack_detail/pack_detail_event.dart';
-import '../models/sticker.dart';
+import '../theme.dart';
 
 class ImportScreen extends StatefulWidget {
   const ImportScreen({super.key, required this.packId});
@@ -19,13 +18,9 @@ class ImportScreen extends StatefulWidget {
   State<ImportScreen> createState() => _ImportScreenState();
 }
 
-class _ImportScreenState extends State<ImportScreen> with SingleTickerProviderStateMixin {
+class _ImportScreenState extends State<ImportScreen> {
   final _urlController = TextEditingController();
-
-  // ImportReady carries only file paths, not a sticker type, so we track
-  // which pick path is in flight to know what type to report on success.
-  // Everything except the GIF path yields static stickers.
-  StickerType _pendingType = StickerType.static_;
+  bool _onDeviceTab = true;
 
   @override
   void dispose() {
@@ -33,90 +28,326 @@ class _ImportScreenState extends State<ImportScreen> with SingleTickerProviderSt
     super.dispose();
   }
 
+  void _dispatchAndClose(ImportEvent event) {
+    context.read<ImportBloc>().add(event);
+    Navigator.of(context).pop();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Add stickers'),
-          bottom: const TabBar(tabs: [Tab(text: 'From device'), Tab(text: 'From a link')]),
+    final colors = Theme.of(context).extension<AppColors>()!;
+    return Scaffold(
+      body: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(6, 6, 6, 4),
+              child: Row(
+                children: [
+                  IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.of(context).pop()),
+                  Text(
+                    'Add stickers',
+                    style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700, color: colors.tx),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(color: colors.surf2, borderRadius: BorderRadius.circular(18)),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _TabButton(
+                        label: 'From Device',
+                        selected: _onDeviceTab,
+                        onTap: () => setState(() => _onDeviceTab = true),
+                      ),
+                    ),
+                    Expanded(
+                      child: _TabButton(
+                        label: 'From Link',
+                        selected: !_onDeviceTab,
+                        onTap: () => setState(() => _onDeviceTab = false),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(18, 18, 18, 40),
+                child: _onDeviceTab ? _buildDeviceTab(context) : _buildLinkTab(context),
+              ),
+            ),
+          ],
         ),
-        body: BlocConsumer<ImportBloc, ImportState>(
-          listener: (context, state) {
-            if (state.status == ImportStatus.ready) {
-              context.read<PackDetailBloc>().add(
-                    StickersAdded(state.processedFilePaths!, _pendingType),
-                  );
-              Navigator.of(context).pop();
-            } else if (state.status == ImportStatus.failure) {
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(state.failureMessage!)));
-            }
-          },
-          builder: (context, state) {
-            if (state.status == ImportStatus.processing) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            return TabBarView(
+      ),
+    );
+  }
+
+  Widget _buildDeviceTab(BuildContext context) {
+    final colors = Theme.of(context).extension<AppColors>()!;
+    return Column(
+      children: [
+        _PickCard(
+          title: 'Pick from your gallery',
+          subtitle: 'Choose one or more images to pop into your pocket.',
+          leading: Icon(Icons.photo_library_outlined, color: colors.acc),
+          onTap: () => _dispatchAndClose(const PickStaticImagesRequested()),
+        ),
+        const SizedBox(height: 12),
+        _PickCard(
+          title: 'Bring in a GIF',
+          subtitle: 'GIFs always come in as animated stickers.',
+          leading: Text('GIF', style: TextStyle(fontWeight: FontWeight.w700, color: colors.tx)),
+          onTap: () => _dispatchAndClose(const PickGifRequested()),
+        ),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(color: colors.surf2, borderRadius: BorderRadius.circular(18)),
+          child: Text(
+            'Stickers are resized and compressed for WhatsApp automatically. Nothing leaves your device.',
+            style: TextStyle(fontSize: 12.5, color: colors.mut),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLinkTab(BuildContext context) {
+    final colors = Theme.of(context).extension<AppColors>()!;
+    return BlocBuilder<ImportBloc, ImportState>(
+      builder: (context, state) {
+        final hasText = _urlController.text.trim().isNotEmpty;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               children: [
-                Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      ElevatedButton(
-                        onPressed: () {
-                          _pendingType = StickerType.static_;
-                          context.read<ImportBloc>().add(const PickStaticImagesRequested());
-                        },
-                        child: const Text('Pick images'),
+                Expanded(
+                  child: TextField(
+                    controller: _urlController,
+                    onChanged: (_) => setState(() {}),
+                    decoration: InputDecoration(
+                      hintText: 'Bring a sticker from the web',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(18),
+                        borderSide: BorderSide(color: hasText ? colors.acc : colors.line, width: 1.5),
                       ),
-                      ElevatedButton(
-                        onPressed: () {
-                          _pendingType = StickerType.animated;
-                          context.read<ImportBloc>().add(const PickGifRequested());
-                        },
-                        child: const Text('Pick a GIF'),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    children: [
-                      TextField(
-                        controller: _urlController,
-                        decoration: const InputDecoration(
-                          labelText: 'Paste a TikTok, Instagram, or Pinterest link',
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      if (state.status == ImportStatus.thumbnailPreview) ...[
-                        Image.file(_asFile(state.thumbnailPath!), height: 200),
-                        ElevatedButton(
-                          onPressed: () {
-                            _pendingType = StickerType.static_;
-                            context.read<ImportBloc>().add(const LinkThumbnailConfirmed());
-                          },
-                          child: const Text('Use this image'),
-                        ),
-                      ] else
-                        ElevatedButton(
-                          onPressed: () => context
-                              .read<ImportBloc>()
-                              .add(LinkUrlSubmitted(_urlController.text.trim())),
-                          child: const Text('Fetch preview'),
-                        ),
-                    ],
+                const SizedBox(width: 9),
+                SizedBox(
+                  width: 78,
+                  height: 54,
+                  child: OutlinedButton(
+                    onPressed: () async {
+                      final data = await Clipboard.getData('text/plain');
+                      if (data?.text != null) {
+                        _urlController.text = data!.text!;
+                        setState(() {});
+                      }
+                    },
+                    child: const Text('Paste'),
                   ),
                 ),
               ],
-            );
-          },
+            ),
+            const SizedBox(height: 11),
+            Wrap(
+              spacing: 7,
+              children: const [
+                _SourceChip('TikTok'),
+                _SourceChip('Instagram'),
+                _SourceChip('Pinterest'),
+              ],
+            ),
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              height: 54,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: hasText ? colors.acc : colors.surf2,
+                  foregroundColor: hasText ? colors.accTx : colors.mut,
+                  shape: const StadiumBorder(),
+                ),
+                onPressed: hasText
+                    ? () => context.read<ImportBloc>().add(LinkUrlSubmitted(_urlController.text.trim()))
+                    : null,
+                child: const Text('Import', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+              ),
+            ),
+            if (state.status == ImportStatus.processing) ...[
+              const SizedBox(height: 22),
+              Center(
+                child: Column(
+                  children: [
+                    const CircularProgressIndicator(),
+                    const SizedBox(height: 14),
+                    Text('Finding your sticker…', style: TextStyle(fontSize: 14, color: colors.mut)),
+                  ],
+                ),
+              ),
+            ],
+            if (state.status == ImportStatus.thumbnailPreview) ...[
+              const SizedBox(height: 22),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(26),
+                child: Image.file(File(state.thumbnailPath!), width: double.infinity, fit: BoxFit.cover),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => setState(() => _urlController.clear()),
+                      child: const Text('Cancel'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    flex: 2,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: colors.acc,
+                        foregroundColor: colors.accTx,
+                        shape: const StadiumBorder(),
+                      ),
+                      onPressed: () => _dispatchAndClose(const LinkThumbnailConfirmed()),
+                      child: const Text('Add Sticker'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            if (state.status == ImportStatus.failure) ...[
+              const SizedBox(height: 22),
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(color: colors.surf, borderRadius: BorderRadius.circular(26)),
+                child: Column(
+                  children: [
+                    Text(
+                      state.failureMessage ?? '',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 13.5, color: colors.mut),
+                    ),
+                    const SizedBox(height: 14),
+                    OutlinedButton(
+                      onPressed: () =>
+                          context.read<ImportBloc>().add(LinkUrlSubmitted(_urlController.text.trim())),
+                      child: const Text('Try Again'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _TabButton extends StatelessWidget {
+  const _TabButton({required this.label, required this.selected, required this.onTap});
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).extension<AppColors>()!;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 42,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: selected ? colors.surf : Colors.transparent,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 14.5,
+            fontWeight: FontWeight.w700,
+            color: selected ? colors.tx : colors.mut,
+          ),
         ),
       ),
     );
   }
 }
 
-File _asFile(String path) => File(path);
+class _PickCard extends StatelessWidget {
+  const _PickCard({required this.title, required this.subtitle, required this.leading, required this.onTap});
+
+  final String title;
+  final String subtitle;
+  final Widget leading;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).extension<AppColors>()!;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(24),
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: colors.surf,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: colors.line),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 54,
+              height: 54,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(color: colors.accSoft, borderRadius: BorderRadius.circular(17)),
+              child: leading,
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: TextStyle(fontSize: 16.5, fontWeight: FontWeight.w700, color: colors.tx)),
+                  const SizedBox(height: 3),
+                  Text(subtitle, style: TextStyle(fontSize: 13, color: colors.mut)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SourceChip extends StatelessWidget {
+  const _SourceChip(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).extension<AppColors>()!;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
+      decoration: BoxDecoration(color: colors.surf2, borderRadius: BorderRadius.circular(999)),
+      child: Text(label, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: colors.mut)),
+    );
+  }
+}
