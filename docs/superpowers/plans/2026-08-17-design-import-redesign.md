@@ -12,11 +12,13 @@
 
 - Use `fvm flutter` / `fvm dart` for every command in this plan (this project pins Flutter via FVM — see `.fvmrc`), never bare `flutter`/`dart`.
 - Accent color is fixed to `#FF6B57` in both light and dark mode — not a user-facing setting (spec: "Out of scope").
+- Colors come from `AppColors`, with two named exceptions where the mockup itself hardcodes fixed values rather than theme tokens: the delete-red `#E0523C`, and the dark/white overlay chips on photo content (GIF badge, sticker-tile remove button) — those sit on top of user images and need constant contrast regardless of app theme, matching the mockup's own non-theme-reactive `rgba(16,13,10,X)` values for the same elements.
 - Dark mode toggle is manual only, persisted to a Hive `settings` box under key `isDark` — no system-theme following.
 - App display name changes to "Stickerbox" (UI text / `MaterialApp.title` only — package id and store identity are unchanged, per spec).
-- `ImportProcessing`'s `current`/`total` fields are `null` for single-item flows (GIF pick, link import) and populated only during the static-image batch loop.
+- `ImportState`'s `current`/`total` fields are `null` for single-item flows (GIF pick, link import) and populated only during the static-image batch loop.
 - Per this project's established testing convention (confirmed in the approved spec's own Testing section): bloc-level logic gets `bloc_test` coverage; pure UI (redesigned screens, new sheets, `CropScreen`) gets no automated tests — verify by running the app with `fvm flutter run`. Every UI-only task below still runs `fvm flutter analyze` before its commit.
-- Follow this project's existing patterns: sealed `Equatable` events/states, `Bloc`'s `_mutate`-via-`repository.getPack`-then-save pattern in `PackDetailBloc`, the `BlocProvider.value` re-supply pattern for widgets pushed via `Navigator.push` (routes are Overlay siblings, not descendants — see `pack_detail_screen.dart`'s existing comment).
+- Follow this project's existing patterns: sealed `Equatable` event classes, `Bloc`'s `_mutate`-via-`repository.getPack`-then-save pattern in `PackDetailBloc`, the `BlocProvider.value` re-supply pattern for widgets pushed via `Navigator.push` (routes are Overlay siblings, not descendants — see `pack_detail_screen.dart`'s existing comment).
+- **States are not sealed.** Each bloc's state (`PackListState`, `PackDetailState`, `ImportState`) is a single `Equatable` class with a `<X>Status` enum discriminator field and nullable payload fields for whichever status is active (Task 6) — this applies from Task 6 onward; Tasks 1, 3, and 4 predate it and are historically accurate records of the original sealed design they were built and reviewed against. Read status via `state.status == SomeStatus.value`, never `state is SomeSubclass`.
 
 ---
 
@@ -35,14 +37,15 @@
 - `lib/main.dart` — open the settings box, provide `ThemeCubit`, wire `theme`/`darkTheme`/`themeMode`, rename app title.
 - `lib/blocs/pack_detail/pack_detail_event.dart` — add `PackRenameRequested`, `PackDeleteRequested`.
 - `lib/blocs/pack_detail/pack_detail_bloc.dart` — handlers for the two new events.
-- `lib/blocs/import/import_state.dart` — `ImportProcessing` gains `current`/`total`; `ImportReady` gains `type` (root-causes the `_pendingType` tracking that only worked because `ImportScreen` used to stay alive until `ImportReady` — it won't once Import pops immediately).
-- `lib/blocs/import/import_bloc.dart` — emit progress during the static-image batch loop; pass the correct `StickerType` into every `ImportReady`.
+- `lib/blocs/import/import_state.dart` — `ImportProcessing` gains `current`/`total`; `ImportReady` gains `type` (root-causes the `_pendingType` tracking that only worked because `ImportScreen` used to stay alive until `ImportReady` — it won't once Import pops immediately). Task 6 later collapses this whole sealed hierarchy into one `ImportState` class with an `ImportStatus` enum, superseding this shape.
+- `lib/blocs/import/import_bloc.dart` — emit progress during the static-image batch loop; pass the correct `StickerType` into every `ImportReady` (Task 4); emit calls updated again to the single-class shape (Task 6).
+- `lib/blocs/pack_list/pack_list_state.dart`, `lib/blocs/pack_list/pack_list_bloc.dart`, `lib/blocs/pack_detail/pack_detail_state.dart`, `lib/blocs/pack_detail/pack_detail_bloc.dart` — collapsed to the single-class-with-status-enum shape (Task 6).
 - `lib/widgets/pack_list_tile.dart` — redesigned card (tray thumbnail/placeholder, meta, up to 4 mini previews, overflow button).
 - `lib/widgets/sticker_grid_tile.dart` — redesigned tile (rounded border, GIF badge, dark remove chip); gains an `isAnimated` param.
-- `lib/screens/pack_list_screen.dart` — full redesign: header, empty state, create-pack sheet, per-pack overflow (rename/delete) sheet.
-- `lib/screens/pack_detail_screen.dart` — full redesign: header, tray card (→ `CropScreen`), sticker count header, empty state, grid, bottom CTA with helper text, overflow (rename/delete) sheet, processing sheet (live progress), WhatsApp confirm/success sheets, WhatsApp-missing dialog; provides `ImportBloc` at this level now.
-- `lib/screens/import_screen.dart` — full redesign: segmented tabs, device tab, link tab; pops immediately on dispatch instead of waiting for `ImportReady`.
-- `test/blocs/import_bloc_test.dart` — update for the new `ImportReady(paths, type)` signature and progress emissions.
+- `lib/screens/pack_list_screen.dart` — minimally patched to the new state shape (Task 6), then fully redesigned: header, empty state, create-pack sheet, per-pack overflow (rename/delete) sheet (Task 8).
+- `lib/screens/pack_detail_screen.dart` — minimally patched to the new state shape (Task 6), then fully redesigned: header, tray card (→ `CropScreen`), sticker count header, empty state, grid, bottom CTA with helper text, overflow (rename/delete) sheet, processing sheet (live progress), WhatsApp confirm/success sheets, WhatsApp-missing dialog; provides `ImportBloc` at this level now (Tasks 9–10).
+- `lib/screens/import_screen.dart` — minimally patched to the new state shape (Task 6), then fully redesigned: segmented tabs, device tab, link tab; pops immediately on dispatch instead of waiting for the ready status (Task 11).
+- `test/blocs/import_bloc_test.dart`, `test/blocs/pack_list_bloc_test.dart`, `test/blocs/pack_detail_bloc_test.dart` — updated for the single-class state shape (Task 6); `import_bloc_test.dart` first updated for the `ImportReady(paths, type)` signature and progress emissions (Task 4).
 
 ---
 
@@ -383,7 +386,7 @@ git commit -m "Add ThemeCubit, AppColors theme tokens, and dark-mode persistence
 - Modify: `pubspec.yaml`
 
 **Interfaces:**
-- Produces: platform launcher icons generated from `assets/app-icon.png`; `assets/icon.png` available to `Image.asset('assets/icon.png')` for Task 8's empty states.
+- Produces: platform launcher icons generated from `assets/app-icon.png`; `assets/icon.png` available to `Image.asset('assets/icon.png')` for Task 9's empty states.
 
 - [ ] **Step 1: Add `flutter_launcher_icons` and configure it**
 
@@ -442,7 +445,7 @@ git commit -m "Generate app icon from assets/app-icon.png; bundle assets/icon.pn
 - Modify: `test/blocs/pack_detail_bloc_test.dart`
 
 **Interfaces:**
-- Produces: `PackRenameRequested(String newName)`, `PackDeleteRequested()` events; on delete, bloc emits `PackDetailNotFound` (reused — Task 8's screen distinguishes "not found because just deleted" via `BlocListener.listenWhen: previous is PackDetailLoaded && current is PackDetailNotFound`).
+- Produces: `PackRenameRequested(String newName)`, `PackDeleteRequested()` events; on delete, bloc emits `PackDetailNotFound` (reused — Task 9's screen distinguishes "not found because just deleted" via `BlocListener.listenWhen: previous is PackDetailLoaded && current is PackDetailNotFound`).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -555,7 +558,7 @@ git commit -m "Add PackDetailBloc rename/delete events for the Detail screen's o
 - Modify: `test/blocs/import_bloc_test.dart`
 
 **Interfaces:**
-- Produces: `ImportProcessing({int? current, int? total})`; `ImportReady(List<String> processedFilePaths, StickerType type)`. Task 8/9's `PackDetailScreen` listener reads `state.current`/`state.total` for the progress bar and `state.type` to dispatch `StickersAdded` with the right `StickerType` (replacing `ImportScreen`'s now-removed `_pendingType` field, which only worked while Import stayed alive until `ImportReady` — it won't once Task 10 makes Import pop immediately).
+- Produces: `ImportProcessing({int? current, int? total})`; `ImportReady(List<String> processedFilePaths, StickerType type)`. Task 9/10's `PackDetailScreen` listener reads `state.current`/`state.total` for the progress bar and `state.type` to dispatch `StickersAdded` with the right `StickerType` (replacing `ImportScreen`'s now-removed `_pendingType` field, which only worked while Import stayed alive until `ImportReady` — it won't once Task 11 makes Import pop immediately).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -855,7 +858,7 @@ git commit -m "Add live progress fields to ImportProcessing and a type field to 
 - Create: `test/widgets/toast_test.dart`
 
 **Interfaces:**
-- Produces: `void showToast(BuildContext context, String message)`. Used by Task 8/9 (e.g. "Sticker removed", "N stickers added", "Tray icon updated", "Pack deleted").
+- Produces: `void showToast(BuildContext context, String message)`. Used by Task 9/10 (e.g. "Sticker removed", "N stickers added", "Tray icon updated", "Pack deleted").
 
 - [ ] **Step 1: Write the failing test**
 
@@ -928,14 +931,1052 @@ git commit -m "Add showToast: dark pill SnackBar matching the mockup's toast"
 
 ---
 
-## Task 6: `CropScreen` (replaces `image_cropper`)
+## Task 6: Collapse `PackListState`, `PackDetailState`, `ImportState` into single classes
+
+Pure refactor, no behavior change: each bloc's sealed multi-class state
+hierarchy becomes one `Equatable` class with a `<X>Status` enum
+discriminator field plus nullable payload fields for whichever status is
+active — matching the mockup's own `state` object shape (one object, many
+keys) rather than a sealed ADT. Every consumer switches from `state is
+SomeSubclass` to `state.status == SomeStatus.value`. The bloc class names
+(`PackListState`, `PackDetailState`, `ImportState`) and their `Bloc<Event,
+State>` generic parameters are unchanged — only their internal shape
+changes — so this task touches every file that currently pattern-matches on
+a state subtype, but not the bloc/screen class signatures themselves.
+
+**Files:**
+- Modify: `lib/blocs/pack_list/pack_list_state.dart`
+- Modify: `lib/blocs/pack_list/pack_list_bloc.dart`
+- Modify: `lib/blocs/pack_detail/pack_detail_state.dart`
+- Modify: `lib/blocs/pack_detail/pack_detail_bloc.dart`
+- Modify: `lib/blocs/import/import_state.dart`
+- Modify: `lib/blocs/import/import_bloc.dart`
+- Modify: `lib/screens/pack_list_screen.dart` (minimal patch — Task 8 replaces this file wholesale shortly after; only the state-shape references change here)
+- Modify: `lib/screens/pack_detail_screen.dart` (minimal patch — Task 9 replaces this file wholesale shortly after)
+- Modify: `lib/screens/import_screen.dart` (minimal patch — Task 11 replaces this file wholesale shortly after)
+- Modify: `test/blocs/pack_list_bloc_test.dart`
+- Modify: `test/blocs/pack_detail_bloc_test.dart`
+- Modify: `test/blocs/import_bloc_test.dart`
+
+**Interfaces:**
+- Produces: `enum PackListStatus { loading, loaded }`, `PackListState({status, packs})`. `enum PackDetailStatus { loading, notFound, loaded }`, `PackDetailState({status, pack, canAddToWhatsApp})` — `pack` is now `StickerPack?`. `enum ImportStatus { initial, processing, thumbnailPreview, ready, failure }`, `ImportState({status, current, total, thumbnailPath, processedFilePaths, type, failureMessage})`.
+- Every later task (7–11) that reads these blocs' states must use `.status ==` comparisons, never `is`/`as`. This supersedes any `is PackListLoaded`/`is PackDetailLoaded`/`is ImportReady`/etc. wording appearing elsewhere in this plan document — those were written before this task existed; treat `.status ==` as authoritative.
+
+- [ ] **Step 1: Rewrite `lib/blocs/pack_list/pack_list_state.dart`**
+
+```dart
+import 'package:equatable/equatable.dart';
+
+import '../../models/sticker_pack.dart';
+
+enum PackListStatus { loading, loaded }
+
+class PackListState extends Equatable {
+  const PackListState({this.status = PackListStatus.loading, this.packs = const []});
+
+  final PackListStatus status;
+  final List<StickerPack> packs;
+
+  @override
+  List<Object?> get props => [status, packs];
+}
+```
+
+- [ ] **Step 2: Update `lib/blocs/pack_list/pack_list_bloc.dart`**
+
+Replace the constructor's `super(...)` argument and `_emitLoaded`:
+
+```dart
+  PackListBloc(this._repository) : super(const PackListState()) {
+```
+
+```dart
+  void _emitLoaded(Emitter<PackListState> emit) {
+    emit(PackListState(status: PackListStatus.loaded, packs: _repository.getAllPacks()));
+  }
+```
+
+- [ ] **Step 3: Rewrite `lib/blocs/pack_detail/pack_detail_state.dart`**
+
+```dart
+import 'package:equatable/equatable.dart';
+
+import '../../models/sticker_pack.dart';
+
+enum PackDetailStatus { loading, notFound, loaded }
+
+class PackDetailState extends Equatable {
+  const PackDetailState({
+    this.status = PackDetailStatus.loading,
+    this.pack,
+    this.canAddToWhatsApp = false,
+  });
+
+  final PackDetailStatus status;
+  final StickerPack? pack;
+  final bool canAddToWhatsApp;
+
+  @override
+  List<Object?> get props => [status, pack, canAddToWhatsApp];
+}
+```
+
+- [ ] **Step 4: Update `lib/blocs/pack_detail/pack_detail_bloc.dart`**
+
+Replace the whole file:
+
+```dart
+import 'dart:io';
+
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+
+import '../../models/sticker.dart';
+import '../../models/sticker_pack.dart';
+import '../../repositories/pack_repository.dart';
+import '../../repositories/sticker_processor.dart';
+import 'pack_detail_event.dart';
+import 'pack_detail_state.dart';
+
+class PackDetailBloc extends Bloc<PackDetailEvent, PackDetailState> {
+  PackDetailBloc({required this.repository, required this.stickerProcessor})
+      : super(const PackDetailState()) {
+    on<PackDetailLoadRequested>(_onLoad);
+    on<StickersAdded>(_onStickersAdded);
+    on<StickerRemoved>(_onStickerRemoved);
+    on<TrayIconSet>(_onTrayIconSet);
+    on<PackRenameRequested>(_onRenameRequested);
+    on<PackDeleteRequested>(_onDeleteRequested);
+  }
+
+  final PackRepository repository;
+  final StickerProcessor stickerProcessor;
+
+  String _newId() => '${DateTime.now().microsecondsSinceEpoch}';
+
+  bool _canAdd(StickerPack pack) =>
+      pack.stickers.length >= 3 && pack.stickers.length <= 30 && pack.trayIconPath != null;
+
+  Future<void> _onLoad(PackDetailLoadRequested event, Emitter<PackDetailState> emit) async {
+    final pack = repository.getPack(event.packId);
+    if (pack == null) {
+      emit(const PackDetailState(status: PackDetailStatus.notFound));
+      return;
+    }
+    emit(PackDetailState(status: PackDetailStatus.loaded, pack: pack, canAddToWhatsApp: _canAdd(pack)));
+  }
+
+  /// Loads the currently-displayed pack fresh from the repository and applies
+  /// [mutate] to it, then saves and re-emits. Reading `state` (rather than a
+  /// separately-tracked id) means a mutation event works whether it follows a
+  /// real `PackDetailLoadRequested` or a bloc_test `seed`.
+  Future<void> _mutate(
+    Emitter<PackDetailState> emit,
+    void Function(StickerPack pack) mutate,
+  ) async {
+    final current = state;
+    if (current.status != PackDetailStatus.loaded || current.pack == null) return;
+    final pack = repository.getPack(current.pack!.id);
+    if (pack == null) return;
+    mutate(pack);
+    await repository.savePack(pack);
+    emit(PackDetailState(status: PackDetailStatus.loaded, pack: pack, canAddToWhatsApp: _canAdd(pack)));
+  }
+
+  Future<void> _onStickersAdded(StickersAdded event, Emitter<PackDetailState> emit) => _mutate(
+    emit,
+    (pack) => pack.stickers.addAll([
+      for (final path in event.processedFilePaths)
+        Sticker(id: _newId(), filePath: path, type: event.type),
+    ]),
+  );
+
+  Future<void> _onStickerRemoved(StickerRemoved event, Emitter<PackDetailState> emit) => _mutate(
+    emit,
+    (pack) => pack.stickers.removeWhere((s) => s.id == event.stickerId),
+  );
+
+  Future<void> _onTrayIconSet(TrayIconSet event, Emitter<PackDetailState> emit) async {
+    final current = state;
+    if (current.status != PackDetailStatus.loaded || current.pack == null) return;
+    final pack = repository.getPack(current.pack!.id);
+    if (pack == null) return;
+    final dir = await getApplicationDocumentsDirectory();
+    final trayIconPath = p.join(dir.path, 'stickers', '${_newId()}_tray.png');
+    await Directory(p.dirname(trayIconPath)).create(recursive: true);
+    await stickerProcessor.encodeTrayIcon(event.croppedImagePath, trayIconPath);
+    pack.trayIconPath = trayIconPath;
+    await repository.savePack(pack);
+    emit(PackDetailState(status: PackDetailStatus.loaded, pack: pack, canAddToWhatsApp: _canAdd(pack)));
+  }
+
+  Future<void> _onRenameRequested(PackRenameRequested event, Emitter<PackDetailState> emit) =>
+      _mutate(emit, (pack) => pack.name = event.newName);
+
+  Future<void> _onDeleteRequested(PackDeleteRequested event, Emitter<PackDetailState> emit) async {
+    final current = state;
+    if (current.status != PackDetailStatus.loaded || current.pack == null) return;
+    await repository.deletePack(current.pack!.id);
+    emit(const PackDetailState(status: PackDetailStatus.notFound));
+  }
+}
+```
+
+- [ ] **Step 5: Rewrite `lib/blocs/import/import_state.dart`**
+
+```dart
+import 'package:equatable/equatable.dart';
+
+import '../../models/sticker.dart';
+
+enum ImportStatus { initial, processing, thumbnailPreview, ready, failure }
+
+class ImportState extends Equatable {
+  const ImportState({
+    this.status = ImportStatus.initial,
+    this.current,
+    this.total,
+    this.thumbnailPath,
+    this.processedFilePaths,
+    this.type,
+    this.failureMessage,
+  });
+
+  final ImportStatus status;
+  final int? current;
+  final int? total;
+  final String? thumbnailPath;
+  final List<String>? processedFilePaths;
+  final StickerType? type;
+  final String? failureMessage;
+
+  @override
+  List<Object?> get props => [
+    status,
+    current,
+    total,
+    thumbnailPath,
+    processedFilePaths,
+    type,
+    failureMessage,
+  ];
+}
+```
+
+- [ ] **Step 6: Update `lib/blocs/import/import_bloc.dart`**
+
+Replace the whole file:
+
+```dart
+import 'dart:io';
+
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+
+import '../../models/sticker.dart';
+import '../../repositories/import_repository.dart';
+import '../../repositories/link_thumbnail_fetcher.dart';
+import '../../repositories/sticker_processor.dart';
+import 'import_event.dart';
+import 'import_state.dart';
+
+class ImportBloc extends Bloc<ImportEvent, ImportState> {
+  ImportBloc({
+    required this.importRepository,
+    required this.stickerProcessor,
+    required this.thumbnailFetcher,
+  }) : super(const ImportState()) {
+    on<PickStaticImagesRequested>(_onPickStaticImages);
+    on<PickGifRequested>(_onPickGif);
+    on<LinkUrlSubmitted>(_onLinkUrlSubmitted);
+    on<LinkThumbnailConfirmed>(_onLinkThumbnailConfirmed);
+  }
+
+  final ImportRepository importRepository;
+  final StickerProcessor stickerProcessor;
+  final LinkThumbnailFetcher thumbnailFetcher;
+
+  String? _pendingThumbnailPath;
+
+  Future<String> _newOutputPath(String extension) async {
+    final dir = await getApplicationDocumentsDirectory();
+    final id = '${DateTime.now().microsecondsSinceEpoch}';
+    return p.join(dir.path, 'stickers', '$id.$extension');
+  }
+
+  Future<void> _onPickStaticImages(
+    PickStaticImagesRequested event,
+    Emitter<ImportState> emit,
+  ) async {
+    emit(const ImportState(status: ImportStatus.processing));
+    try {
+      final picked = await importRepository.pickStaticImages();
+      final total = picked.length;
+      final outputs = <String>[];
+      for (var i = 0; i < picked.length; i++) {
+        final outputPath = await _newOutputPath('webp');
+        await Directory(p.dirname(outputPath)).create(recursive: true);
+        await stickerProcessor.encodeStatic(picked[i], outputPath);
+        outputs.add(outputPath);
+        emit(ImportState(status: ImportStatus.processing, current: i + 1, total: total));
+      }
+      emit(ImportState(status: ImportStatus.ready, processedFilePaths: outputs, type: StickerType.static_));
+    } catch (e) {
+      emit(ImportState(status: ImportStatus.failure, failureMessage: e.toString()));
+    }
+  }
+
+  Future<void> _onPickGif(PickGifRequested event, Emitter<ImportState> emit) async {
+    emit(const ImportState(status: ImportStatus.processing));
+    try {
+      final inputPath = await importRepository.pickGifFile();
+      if (inputPath == null) {
+        emit(const ImportState());
+        return;
+      }
+      final outputPath = await _newOutputPath('webp');
+      await Directory(p.dirname(outputPath)).create(recursive: true);
+      await stickerProcessor.encodeAnimatedGif(inputPath, outputPath);
+      emit(
+        ImportState(status: ImportStatus.ready, processedFilePaths: [outputPath], type: StickerType.animated),
+      );
+    } catch (e) {
+      emit(ImportState(status: ImportStatus.failure, failureMessage: e.toString()));
+    }
+  }
+
+  Future<void> _onLinkUrlSubmitted(LinkUrlSubmitted event, Emitter<ImportState> emit) async {
+    emit(const ImportState(status: ImportStatus.processing));
+    try {
+      final thumbnailUrl = await thumbnailFetcher.fetchThumbnailUrl(event.url);
+      final localPath = await _newOutputPath('jpg');
+      await Directory(p.dirname(localPath)).create(recursive: true);
+      await thumbnailFetcher.downloadImage(thumbnailUrl, localPath);
+      _pendingThumbnailPath = localPath;
+      emit(ImportState(status: ImportStatus.thumbnailPreview, thumbnailPath: localPath));
+    } on LinkThumbnailException catch (e) {
+      emit(ImportState(status: ImportStatus.failure, failureMessage: e.message));
+    } catch (e) {
+      emit(ImportState(status: ImportStatus.failure, failureMessage: e.toString()));
+    }
+  }
+
+  Future<void> _onLinkThumbnailConfirmed(
+    LinkThumbnailConfirmed event,
+    Emitter<ImportState> emit,
+  ) async {
+    final pending = _pendingThumbnailPath;
+    if (pending == null) return;
+    emit(const ImportState(status: ImportStatus.processing));
+    try {
+      final outputPath = await _newOutputPath('webp');
+      await stickerProcessor.encodeStatic(pending, outputPath);
+      emit(ImportState(status: ImportStatus.ready, processedFilePaths: [outputPath], type: StickerType.static_));
+    } catch (e) {
+      emit(ImportState(status: ImportStatus.failure, failureMessage: e.toString()));
+    }
+  }
+}
+```
+
+- [ ] **Step 7: Patch `lib/screens/pack_list_screen.dart`**
+
+Replace:
+
+```dart
+          if (state is! PackListLoaded) {
+            return const Center(child: CircularProgressIndicator());
+          }
+```
+
+with:
+
+```dart
+          if (state.status != PackListStatus.loaded) {
+            return const Center(child: CircularProgressIndicator());
+          }
+```
+
+(`PackListStatus` is already in scope via the existing `pack_list_state.dart` import.)
+
+- [ ] **Step 8: Patch `lib/screens/pack_detail_screen.dart`**
+
+Replace the `_addToWhatsApp` signature and body:
+
+```dart
+  Future<void> _addToWhatsApp(BuildContext context, PackDetailLoaded state) async {
+    final handoff = context.read<WhatsAppHandoff>();
+    if (!await handoff.isWhatsAppInstalled()) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('WhatsApp is not installed')),
+        );
+      }
+      return;
+    }
+    await handoff.addPack(state.pack);
+  }
+```
+
+with:
+
+```dart
+  Future<void> _addToWhatsApp(BuildContext context, PackDetailState state) async {
+    final handoff = context.read<WhatsAppHandoff>();
+    if (!await handoff.isWhatsAppInstalled()) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('WhatsApp is not installed')),
+        );
+      }
+      return;
+    }
+    await handoff.addPack(state.pack!);
+  }
+```
+
+Replace the top of `build()`'s `BlocBuilder`:
+
+```dart
+        if (state is PackDetailNotFound) {
+          return const Scaffold(body: Center(child: Text('Pack not found')));
+        }
+        if (state is! PackDetailLoaded) {
+          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+        }
+```
+
+with:
+
+```dart
+        if (state.status == PackDetailStatus.notFound) {
+          return const Scaffold(body: Center(child: Text('Pack not found')));
+        }
+        if (state.status != PackDetailStatus.loaded) {
+          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+        }
+```
+
+Replace the three remaining `state.pack.` accesses below that point (`Text(state.pack.name)`, `itemCount: state.pack.stickers.length`, `final sticker = state.pack.stickers[index];`) with `state.pack!.name`, `state.pack!.stickers.length`, `state.pack!.stickers[index]` respectively.
+
+- [ ] **Step 9: Patch `lib/screens/import_screen.dart`**
+
+Replace the `BlocConsumer`'s `listener` and the start of `builder`:
+
+```dart
+          listener: (context, state) {
+            if (state is ImportReady) {
+              context.read<PackDetailBloc>().add(
+                    StickersAdded(state.processedFilePaths, _pendingType),
+                  );
+              Navigator.of(context).pop();
+            } else if (state is ImportFailure) {
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(state.message)));
+            }
+          },
+          builder: (context, state) {
+            if (state is ImportProcessing) {
+              return const Center(child: CircularProgressIndicator());
+            }
+```
+
+with:
+
+```dart
+          listener: (context, state) {
+            if (state.status == ImportStatus.ready) {
+              context.read<PackDetailBloc>().add(
+                    StickersAdded(state.processedFilePaths!, _pendingType),
+                  );
+              Navigator.of(context).pop();
+            } else if (state.status == ImportStatus.failure) {
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(state.failureMessage!)));
+            }
+          },
+          builder: (context, state) {
+            if (state.status == ImportStatus.processing) {
+              return const Center(child: CircularProgressIndicator());
+            }
+```
+
+Replace the thumbnail-preview branch:
+
+```dart
+                      if (state is ImportThumbnailPreview) ...[
+                        Image.file(_asFile(state.localPreviewPath), height: 200),
+```
+
+with:
+
+```dart
+                      if (state.status == ImportStatus.thumbnailPreview) ...[
+                        Image.file(_asFile(state.thumbnailPath!), height: 200),
+```
+
+(`ImportStatus` is already in scope via the existing `import_state.dart` import. `_pendingType` stays as-is here — Task 11 removes it, not this task.)
+
+- [ ] **Step 10: Rewrite `test/blocs/pack_list_bloc_test.dart`**
+
+```dart
+import 'package:bloc_test/bloc_test.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
+import 'package:sticker_creator/blocs/pack_list/pack_list_bloc.dart';
+import 'package:sticker_creator/blocs/pack_list/pack_list_event.dart';
+import 'package:sticker_creator/blocs/pack_list/pack_list_state.dart';
+import 'package:sticker_creator/models/sticker_pack.dart';
+import 'package:sticker_creator/repositories/pack_repository.dart';
+
+class MockPackRepository extends Mock implements PackRepository {}
+
+void main() {
+  setUpAll(() {
+    registerFallbackValue(StickerPack(id: 'x', name: 'x', publisherName: 'x'));
+  });
+
+  late MockPackRepository repository;
+
+  setUp(() => repository = MockPackRepository());
+
+  blocTest<PackListBloc, PackListState>(
+    'PackListLoadRequested loads packs from the repository',
+    setUp: () => when(() => repository.getAllPacks()).thenReturn(
+      [StickerPack(id: '1', name: 'A', publisherName: 'Me')],
+    ),
+    build: () => PackListBloc(repository),
+    act: (bloc) => bloc.add(const PackListLoadRequested()),
+    expect: () => [
+      isA<PackListState>().having((s) => s.status, 'status', PackListStatus.loaded),
+    ],
+  );
+
+  blocTest<PackListBloc, PackListState>(
+    'PackCreated saves a new pack then reloads',
+    setUp: () {
+      when(() => repository.savePack(any())).thenAnswer((_) async {});
+      when(() => repository.getAllPacks()).thenReturn(
+        [StickerPack(id: 'new', name: 'New Pack', publisherName: 'Me')],
+      );
+    },
+    build: () => PackListBloc(repository),
+    act: (bloc) => bloc.add(const PackCreated('New Pack', 'Me')),
+    verify: (_) {
+      final captured = verify(() => repository.savePack(captureAny())).captured;
+      final saved = captured.single as StickerPack;
+      expect(saved.name, 'New Pack');
+      expect(saved.publisherName, 'Me');
+    },
+  );
+
+  blocTest<PackListBloc, PackListState>(
+    'PackRenamed saves the renamed pack then reloads',
+    setUp: () {
+      when(() => repository.getPack('1')).thenReturn(
+        StickerPack(id: '1', name: 'Old', publisherName: 'Me'),
+      );
+      when(() => repository.savePack(any())).thenAnswer((_) async {});
+      when(() => repository.getAllPacks()).thenReturn(
+        [StickerPack(id: '1', name: 'New Name', publisherName: 'Me')],
+      );
+    },
+    build: () => PackListBloc(repository),
+    act: (bloc) => bloc.add(const PackRenamed('1', 'New Name')),
+    verify: (_) {
+      final captured = verify(() => repository.savePack(captureAny())).captured;
+      final saved = captured.single as StickerPack;
+      expect(saved.name, 'New Name');
+    },
+  );
+
+  blocTest<PackListBloc, PackListState>(
+    'PackRenamed is a no-op when the pack does not exist',
+    setUp: () => when(() => repository.getPack('missing')).thenReturn(null),
+    build: () => PackListBloc(repository),
+    act: (bloc) => bloc.add(const PackRenamed('missing', 'New Name')),
+    verify: (_) {
+      verifyNever(() => repository.savePack(any()));
+    },
+  );
+
+  blocTest<PackListBloc, PackListState>(
+    'PackDeleted removes a pack then reloads',
+    setUp: () {
+      when(() => repository.deletePack('1')).thenAnswer((_) async {});
+      when(() => repository.getAllPacks()).thenReturn([]);
+    },
+    build: () => PackListBloc(repository),
+    act: (bloc) => bloc.add(const PackDeleted('1')),
+    expect: () => [const PackListState(status: PackListStatus.loaded, packs: [])],
+  );
+}
+```
+
+- [ ] **Step 11: Rewrite `test/blocs/pack_detail_bloc_test.dart`**
+
+Same file as it exists today, with every `PackDetailLoaded(pack, bool)` construction replaced by `PackDetailState(status: PackDetailStatus.loaded, pack: pack, canAddToWhatsApp: bool)`, every `isA<PackDetailLoaded>()` replaced by `isA<PackDetailState>().having((s) => s.status, 'status', PackDetailStatus.loaded)`, and every `const PackDetailNotFound()` replaced by `const PackDetailState(status: PackDetailStatus.notFound)`. Concretely:
+
+```dart
+import 'dart:io';
+
+import 'package:bloc_test/bloc_test.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
+import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
+import 'package:sticker_creator/blocs/pack_detail/pack_detail_bloc.dart';
+import 'package:sticker_creator/blocs/pack_detail/pack_detail_event.dart';
+import 'package:sticker_creator/blocs/pack_detail/pack_detail_state.dart';
+import 'package:sticker_creator/models/sticker.dart';
+import 'package:sticker_creator/models/sticker_pack.dart';
+import 'package:sticker_creator/repositories/pack_repository.dart';
+import 'package:sticker_creator/repositories/sticker_processor.dart';
+
+class MockPackRepository extends Mock implements PackRepository {}
+
+class MockStickerProcessor extends Mock implements StickerProcessor {}
+
+class _FakeStickerPack extends Fake implements StickerPack {}
+
+/// Fakes getApplicationDocumentsDirectory() so the bloc can run under plain
+/// flutter_test without a real platform channel (see test/blocs/import_bloc_test.dart
+/// for the same pattern).
+class _FakePathProviderPlatform extends PathProviderPlatform {
+  _FakePathProviderPlatform(this._path);
+
+  final String _path;
+
+  @override
+  Future<String?> getApplicationDocumentsPath() async => _path;
+}
+
+StickerPack _packWith(int stickerCount, {String? trayIconPath}) => StickerPack(
+      id: 'p1',
+      name: 'Pack',
+      publisherName: 'Me',
+      trayIconPath: trayIconPath,
+      stickers: [
+        for (var i = 0; i < stickerCount; i++)
+          Sticker(id: 's$i', filePath: '/tmp/s$i.webp', type: StickerType.static_),
+      ],
+    );
+
+void main() {
+  late MockPackRepository repository;
+  late MockStickerProcessor processor;
+  late Directory tempDir;
+
+  setUpAll(() {
+    registerFallbackValue('');
+    registerFallbackValue(_FakeStickerPack());
+  });
+
+  setUp(() {
+    repository = MockPackRepository();
+    processor = MockStickerProcessor();
+    tempDir = Directory.systemTemp.createTempSync('pack_detail_bloc_test');
+    PathProviderPlatform.instance = _FakePathProviderPlatform(tempDir.path);
+  });
+
+  tearDown(() {
+    tempDir.deleteSync(recursive: true);
+  });
+
+  PackDetailBloc buildBloc() => PackDetailBloc(repository: repository, stickerProcessor: processor);
+
+  blocTest<PackDetailBloc, PackDetailState>(
+    'canAddToWhatsApp is false with fewer than 3 stickers',
+    setUp: () => when(() => repository.getPack('p1')).thenReturn(_packWith(2, trayIconPath: '/tmp/tray.png')),
+    build: buildBloc,
+    act: (bloc) => bloc.add(const PackDetailLoadRequested('p1')),
+    expect: () => [
+      isA<PackDetailState>()
+          .having((s) => s.status, 'status', PackDetailStatus.loaded)
+          .having((s) => s.canAddToWhatsApp, 'canAddToWhatsApp', isFalse),
+    ],
+  );
+
+  blocTest<PackDetailBloc, PackDetailState>(
+    'canAddToWhatsApp is true with 3-30 stickers and a tray icon',
+    setUp: () => when(() => repository.getPack('p1')).thenReturn(_packWith(3, trayIconPath: '/tmp/tray.png')),
+    build: buildBloc,
+    act: (bloc) => bloc.add(const PackDetailLoadRequested('p1')),
+    expect: () => [
+      isA<PackDetailState>()
+          .having((s) => s.status, 'status', PackDetailStatus.loaded)
+          .having((s) => s.canAddToWhatsApp, 'canAddToWhatsApp', isTrue),
+    ],
+  );
+
+  blocTest<PackDetailBloc, PackDetailState>(
+    'canAddToWhatsApp is false without a tray icon even at 3 stickers',
+    setUp: () => when(() => repository.getPack('p1')).thenReturn(_packWith(3)),
+    build: buildBloc,
+    act: (bloc) => bloc.add(const PackDetailLoadRequested('p1')),
+    expect: () => [
+      isA<PackDetailState>()
+          .having((s) => s.status, 'status', PackDetailStatus.loaded)
+          .having((s) => s.canAddToWhatsApp, 'canAddToWhatsApp', isFalse),
+    ],
+  );
+
+  blocTest<PackDetailBloc, PackDetailState>(
+    'PackDetailLoadRequested emits notFound status for a missing pack',
+    setUp: () => when(() => repository.getPack('missing')).thenReturn(null),
+    build: buildBloc,
+    act: (bloc) => bloc.add(const PackDetailLoadRequested('missing')),
+    expect: () => [const PackDetailState(status: PackDetailStatus.notFound)],
+  );
+
+  blocTest<PackDetailBloc, PackDetailState>(
+    'StickerRemoved removes the sticker and re-saves the pack',
+    setUp: () {
+      when(() => repository.getPack('p1')).thenReturn(_packWith(3, trayIconPath: '/tmp/tray.png'));
+      when(() => repository.savePack(any())).thenAnswer((_) async {});
+    },
+    build: buildBloc,
+    seed: () => PackDetailState(
+      status: PackDetailStatus.loaded,
+      pack: _packWith(3, trayIconPath: '/tmp/tray.png'),
+      canAddToWhatsApp: true,
+    ),
+    act: (bloc) => bloc.add(const StickerRemoved('s0')),
+    verify: (_) {
+      final captured = verify(() => repository.savePack(captureAny())).captured;
+      final saved = captured.single as StickerPack;
+      expect(saved.stickers.any((s) => s.id == 's0'), isFalse);
+    },
+  );
+
+  blocTest<PackDetailBloc, PackDetailState>(
+    'StickerRemoved no-ops instead of resurrecting a pack the repository can no longer find',
+    setUp: () => when(() => repository.getPack('p1')).thenReturn(null),
+    build: buildBloc,
+    seed: () => PackDetailState(
+      status: PackDetailStatus.loaded,
+      pack: _packWith(3, trayIconPath: '/tmp/tray.png'),
+      canAddToWhatsApp: true,
+    ),
+    act: (bloc) => bloc.add(const StickerRemoved('s0')),
+    expect: () => [],
+    verify: (_) => verifyNever(() => repository.savePack(any())),
+  );
+
+  blocTest<PackDetailBloc, PackDetailState>(
+    'StickersAdded appends processed stickers, re-saves the pack, and recomputes canAddToWhatsApp',
+    setUp: () {
+      when(() => repository.getPack('p1')).thenReturn(_packWith(2, trayIconPath: '/tmp/tray.png'));
+      when(() => repository.savePack(any())).thenAnswer((_) async {});
+    },
+    build: buildBloc,
+    seed: () => PackDetailState(
+      status: PackDetailStatus.loaded,
+      pack: _packWith(2, trayIconPath: '/tmp/tray.png'),
+    ),
+    act: (bloc) => bloc.add(
+      const StickersAdded(['/tmp/new1.webp', '/tmp/new2.webp'], StickerType.static_),
+    ),
+    expect: () => [
+      isA<PackDetailState>()
+          .having((s) => s.status, 'status', PackDetailStatus.loaded)
+          .having((s) => s.canAddToWhatsApp, 'canAddToWhatsApp', isTrue),
+    ],
+    verify: (_) {
+      final captured = verify(() => repository.savePack(captureAny())).captured;
+      final saved = captured.single as StickerPack;
+      expect(saved.stickers.length, 4);
+      expect(saved.stickers.map((s) => s.filePath), containsAll(['/tmp/new1.webp', '/tmp/new2.webp']));
+      expect(saved.stickers.where((s) => s.filePath == '/tmp/new1.webp').single.type, StickerType.static_);
+    },
+  );
+
+  blocTest<PackDetailBloc, PackDetailState>(
+    'TrayIconSet encodes the cropped image via StickerProcessor, saves the tray path, and recomputes canAddToWhatsApp',
+    setUp: () {
+      when(() => repository.getPack('p1')).thenReturn(_packWith(3));
+      when(() => repository.savePack(any())).thenAnswer((_) async {});
+      when(() => processor.encodeTrayIcon(any(), any())).thenAnswer((_) async {});
+    },
+    build: buildBloc,
+    seed: () => PackDetailState(status: PackDetailStatus.loaded, pack: _packWith(3)),
+    act: (bloc) => bloc.add(const TrayIconSet('/tmp/cropped.png')),
+    wait: const Duration(milliseconds: 50),
+    expect: () => [
+      isA<PackDetailState>()
+          .having((s) => s.status, 'status', PackDetailStatus.loaded)
+          .having((s) => s.canAddToWhatsApp, 'canAddToWhatsApp', isTrue),
+    ],
+    verify: (_) {
+      verify(() => processor.encodeTrayIcon('/tmp/cropped.png', any())).called(1);
+      final captured = verify(() => repository.savePack(captureAny())).captured;
+      final saved = captured.single as StickerPack;
+      expect(saved.trayIconPath, isNotNull);
+    },
+  );
+
+  blocTest<PackDetailBloc, PackDetailState>(
+    'PackRenameRequested renames and re-saves the pack',
+    setUp: () {
+      when(() => repository.getPack('p1')).thenReturn(_packWith(3, trayIconPath: '/tmp/tray.png'));
+      when(() => repository.savePack(any())).thenAnswer((_) async {});
+    },
+    build: buildBloc,
+    seed: () => PackDetailState(
+      status: PackDetailStatus.loaded,
+      pack: _packWith(3, trayIconPath: '/tmp/tray.png'),
+      canAddToWhatsApp: true,
+    ),
+    act: (bloc) => bloc.add(const PackRenameRequested('New Name')),
+    expect: () => [
+      isA<PackDetailState>().having((s) => s.pack?.name, 'pack.name', 'New Name'),
+    ],
+    verify: (_) {
+      final captured = verify(() => repository.savePack(captureAny())).captured;
+      expect((captured.single as StickerPack).name, 'New Name');
+    },
+  );
+
+  blocTest<PackDetailBloc, PackDetailState>(
+    'PackDeleteRequested deletes the pack and emits notFound status',
+    setUp: () {
+      when(() => repository.getPack('p1')).thenReturn(_packWith(3, trayIconPath: '/tmp/tray.png'));
+      when(() => repository.deletePack('p1')).thenAnswer((_) async {});
+    },
+    build: buildBloc,
+    seed: () => PackDetailState(
+      status: PackDetailStatus.loaded,
+      pack: _packWith(3, trayIconPath: '/tmp/tray.png'),
+      canAddToWhatsApp: true,
+    ),
+    act: (bloc) => bloc.add(const PackDeleteRequested()),
+    expect: () => [const PackDetailState(status: PackDetailStatus.notFound)],
+    verify: (_) => verify(() => repository.deletePack('p1')).called(1),
+  );
+}
+```
+
+- [ ] **Step 12: Rewrite `test/blocs/import_bloc_test.dart`**
+
+```dart
+import 'dart:io';
+
+import 'package:bloc_test/bloc_test.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
+import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
+import 'package:sticker_creator/blocs/import/import_bloc.dart';
+import 'package:sticker_creator/blocs/import/import_event.dart';
+import 'package:sticker_creator/blocs/import/import_state.dart';
+import 'package:sticker_creator/models/sticker.dart';
+import 'package:sticker_creator/repositories/import_repository.dart';
+import 'package:sticker_creator/repositories/link_thumbnail_fetcher.dart';
+import 'package:sticker_creator/repositories/sticker_processor.dart';
+
+class MockImportRepository extends Mock implements ImportRepository {}
+
+class MockStickerProcessor extends Mock implements StickerProcessor {}
+
+class MockLinkThumbnailFetcher extends Mock implements LinkThumbnailFetcher {}
+
+/// Fakes getApplicationDocumentsDirectory() so the bloc can run under plain
+/// flutter_test without a real platform channel (see test/hive/hive_setup_test.dart
+/// for the same pattern).
+class _FakePathProviderPlatform extends PathProviderPlatform {
+  _FakePathProviderPlatform(this._path);
+
+  final String _path;
+
+  @override
+  Future<String?> getApplicationDocumentsPath() async => _path;
+}
+
+void main() {
+  late MockImportRepository importRepository;
+  late MockStickerProcessor stickerProcessor;
+  late MockLinkThumbnailFetcher thumbnailFetcher;
+  late Directory tempDir;
+
+  setUpAll(() {
+    registerFallbackValue('');
+  });
+
+  setUp(() {
+    importRepository = MockImportRepository();
+    stickerProcessor = MockStickerProcessor();
+    thumbnailFetcher = MockLinkThumbnailFetcher();
+    tempDir = Directory.systemTemp.createTempSync('import_bloc_test');
+    PathProviderPlatform.instance = _FakePathProviderPlatform(tempDir.path);
+  });
+
+  tearDown(() {
+    tempDir.deleteSync(recursive: true);
+  });
+
+  ImportBloc buildBloc() => ImportBloc(
+    importRepository: importRepository,
+    stickerProcessor: stickerProcessor,
+    thumbnailFetcher: thumbnailFetcher,
+  );
+
+  blocTest<ImportBloc, ImportState>(
+    'PickStaticImagesRequested reports current/total progress per image and emits a static ready state',
+    setUp: () {
+      when(() => importRepository.pickStaticImages())
+          .thenAnswer((_) async => ['/tmp/a.jpg', '/tmp/b.jpg']);
+      when(() => stickerProcessor.encodeStatic(any(), any())).thenAnswer((_) async {});
+    },
+    build: buildBloc,
+    act: (bloc) => bloc.add(const PickStaticImagesRequested()),
+    wait: const Duration(milliseconds: 50),
+    expect: () => [
+      const ImportState(status: ImportStatus.processing),
+      const ImportState(status: ImportStatus.processing, current: 1, total: 2),
+      const ImportState(status: ImportStatus.processing, current: 2, total: 2),
+      isA<ImportState>()
+          .having((s) => s.status, 'status', ImportStatus.ready)
+          .having((s) => s.processedFilePaths?.length, 'processedFilePaths.length', 2)
+          .having((s) => s.type, 'type', StickerType.static_),
+    ],
+    verify: (_) {
+      verify(() => importRepository.pickStaticImages()).called(1);
+      verify(() => stickerProcessor.encodeStatic('/tmp/a.jpg', any())).called(1);
+      verify(() => stickerProcessor.encodeStatic('/tmp/b.jpg', any())).called(1);
+    },
+  );
+
+  blocTest<ImportBloc, ImportState>(
+    'PickGifRequested processes the picked GIF and emits an animated ready state with no progress fields',
+    setUp: () {
+      when(() => importRepository.pickGifFile()).thenAnswer((_) async => '/tmp/a.gif');
+      when(() => stickerProcessor.encodeAnimatedGif(any(), any())).thenAnswer((_) async {});
+    },
+    build: buildBloc,
+    act: (bloc) => bloc.add(const PickGifRequested()),
+    wait: const Duration(milliseconds: 50),
+    expect: () => [
+      const ImportState(status: ImportStatus.processing),
+      isA<ImportState>()
+          .having((s) => s.status, 'status', ImportStatus.ready)
+          .having((s) => s.processedFilePaths?.length, 'processedFilePaths.length', 1)
+          .having((s) => s.type, 'type', StickerType.animated),
+    ],
+    verify: (_) {
+      verify(() => importRepository.pickGifFile()).called(1);
+      verify(() => stickerProcessor.encodeAnimatedGif('/tmp/a.gif', any())).called(1);
+    },
+  );
+
+  blocTest<ImportBloc, ImportState>(
+    'PickGifRequested returns to the initial state when the user cancels the picker',
+    setUp: () {
+      when(() => importRepository.pickGifFile()).thenAnswer((_) async => null);
+    },
+    build: buildBloc,
+    act: (bloc) => bloc.add(const PickGifRequested()),
+    expect: () => [const ImportState(status: ImportStatus.processing), const ImportState()],
+    verify: (_) {
+      verifyNever(() => stickerProcessor.encodeAnimatedGif(any(), any()));
+    },
+  );
+
+  blocTest<ImportBloc, ImportState>(
+    'LinkUrlSubmitted fetches and previews a thumbnail',
+    setUp: () {
+      when(
+        () => thumbnailFetcher.fetchThumbnailUrl(any()),
+      ).thenAnswer((_) async => 'https://example.com/thumb.jpg');
+      when(() => thumbnailFetcher.downloadImage(any(), any())).thenAnswer((_) async {});
+    },
+    build: buildBloc,
+    act: (bloc) => bloc.add(const LinkUrlSubmitted('https://www.instagram.com/p/abc')),
+    wait: const Duration(milliseconds: 50),
+    expect: () => [
+      const ImportState(status: ImportStatus.processing),
+      isA<ImportState>().having((s) => s.status, 'status', ImportStatus.thumbnailPreview),
+    ],
+    verify: (_) {
+      verify(
+        () => thumbnailFetcher.fetchThumbnailUrl('https://www.instagram.com/p/abc'),
+      ).called(1);
+      verify(
+        () => thumbnailFetcher.downloadImage('https://example.com/thumb.jpg', any()),
+      ).called(1);
+    },
+  );
+
+  blocTest<ImportBloc, ImportState>(
+    'LinkUrlSubmitted emits a failure state when the fetcher throws',
+    setUp: () {
+      when(
+        () => thumbnailFetcher.fetchThumbnailUrl(any()),
+      ).thenThrow(LinkThumbnailException('No preview image found for this link'));
+    },
+    build: buildBloc,
+    act: (bloc) => bloc.add(const LinkUrlSubmitted('https://www.instagram.com/p/abc')),
+    expect: () => [
+      const ImportState(status: ImportStatus.processing),
+      const ImportState(status: ImportStatus.failure, failureMessage: 'No preview image found for this link'),
+    ],
+  );
+
+  blocTest<ImportBloc, ImportState>(
+    'LinkThumbnailConfirmed encodes the previewed thumbnail and emits a static ready state',
+    setUp: () {
+      when(
+        () => thumbnailFetcher.fetchThumbnailUrl(any()),
+      ).thenAnswer((_) async => 'https://example.com/thumb.jpg');
+      when(() => thumbnailFetcher.downloadImage(any(), any())).thenAnswer((_) async {});
+      when(() => stickerProcessor.encodeStatic(any(), any())).thenAnswer((_) async {});
+    },
+    build: buildBloc,
+    act: (bloc) async {
+      bloc.add(const LinkUrlSubmitted('https://www.instagram.com/p/abc'));
+      await bloc.stream.firstWhere((s) => s.status == ImportStatus.thumbnailPreview);
+      bloc.add(const LinkThumbnailConfirmed());
+    },
+    wait: const Duration(milliseconds: 50),
+    expect: () => [
+      const ImportState(status: ImportStatus.processing),
+      isA<ImportState>().having((s) => s.status, 'status', ImportStatus.thumbnailPreview),
+      const ImportState(status: ImportStatus.processing),
+      isA<ImportState>()
+          .having((s) => s.status, 'status', ImportStatus.ready)
+          .having((s) => s.type, 'type', StickerType.static_),
+    ],
+    verify: (_) {
+      verify(() => stickerProcessor.encodeStatic(any(), any())).called(1);
+    },
+  );
+}
+```
+
+- [ ] **Step 13: Run the full suite**
+
+Run: `fvm flutter analyze && fvm flutter test`
+Expected: analyzer clean, all tests pass (no behavior changed, only state shape — every assertion above encodes the exact same behavior the old sealed-class tests verified).
+
+- [ ] **Step 14: Manual smoke check**
+
+Run: `fvm flutter run`. Confirm the app behaves exactly as before this task (create/rename/delete packs, add/remove stickers, set a tray icon, import via device/link) — this task changes no visible behavior, only internal state representation.
+
+- [ ] **Step 15: Commit**
+
+```bash
+git add lib/blocs/pack_list/pack_list_state.dart lib/blocs/pack_list/pack_list_bloc.dart lib/blocs/pack_detail/pack_detail_state.dart lib/blocs/pack_detail/pack_detail_bloc.dart lib/blocs/import/import_state.dart lib/blocs/import/import_bloc.dart lib/screens/pack_list_screen.dart lib/screens/pack_detail_screen.dart lib/screens/import_screen.dart test/blocs/pack_list_bloc_test.dart test/blocs/pack_detail_bloc_test.dart test/blocs/import_bloc_test.dart
+git commit -m "Collapse PackListState/PackDetailState/ImportState into single classes with status enums"
+```
+
+---
+
+## Task 7: `CropScreen` (replaces `image_cropper`)
 
 **Files:**
 - Modify: `pubspec.yaml`
 - Create: `lib/screens/crop_screen.dart`
+- Modify: `lib/screens/pack_detail_screen.dart` (minimal patch — removing `image_cropper` from `pubspec.yaml` in Step 1 breaks this file's still-old `_setTrayIcon`, which calls `ImageCropper()` directly; Task 9 doesn't run until after this task, so this task must leave the repo analyze-clean itself, same as Task 6's screen patches)
 
 **Interfaces:**
-- Consumes: `PackDetailBloc` (via `context.read`, provided by whoever pushes this screen — Task 8 pushes it with `BlocProvider.value`), its `TrayIconSet(String croppedImagePath)` event.
+- Consumes: `PackDetailBloc` (via `context.read`, provided by whoever pushes this screen — this task's own Step 3 patch pushes it with `BlocProvider.value`, matching the pattern Task 9 later formalizes), its `TrayIconSet(String croppedImagePath)` event.
 - Produces: `CropScreen({required String sourcePath})`. Pops itself on cancel or after a successful crop.
 
 - [ ] **Step 1: Swap the dependency**
@@ -1094,21 +2135,72 @@ class _CropScreenState extends State<CropScreen> {
 }
 ```
 
-- [ ] **Step 3: Verify**
+- [ ] **Step 3: Patch `lib/screens/pack_detail_screen.dart`'s `_setTrayIcon`**
+
+Removing `image_cropper` in Step 1 breaks this file's `import 'package:image_cropper/image_cropper.dart';` and its `_setTrayIcon` method. Task 9 rewrites this whole file properly (with the redesigned UI); this step is only a minimal compatibility patch so the repo stays buildable in the meantime — same treatment Task 6 gave this file.
+
+Replace the import line:
+
+```dart
+import 'package:image_cropper/image_cropper.dart';
+```
+
+with:
+
+```dart
+import 'crop_screen.dart';
+```
+
+Replace `_setTrayIcon`:
+
+```dart
+  Future<void> _setTrayIcon(BuildContext context) async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(source: ImageSource.gallery);
+    if (picked == null || !context.mounted) return;
+    final cropped = await ImageCropper().cropImage(
+      sourcePath: picked.path,
+      aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
+    );
+    if (cropped == null || !context.mounted) return;
+    context.read<PackDetailBloc>().add(TrayIconSet(cropped.path));
+  }
+```
+
+with:
+
+```dart
+  Future<void> _setTrayIcon(BuildContext context) async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(source: ImageSource.gallery);
+    if (picked == null || !context.mounted) return;
+    final packDetailBloc = context.read<PackDetailBloc>();
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => BlocProvider.value(
+          value: packDetailBloc,
+          child: CropScreen(sourcePath: picked.path),
+        ),
+      ),
+    );
+  }
+```
+
+- [ ] **Step 4: Verify**
 
 Run: `fvm flutter analyze`
-Expected: clean (no references to `CropScreen` yet outside this file, so nothing else to break — Task 8 wires the push site).
+Expected: clean repo-wide (this is the point of Step 3 — without it, `pack_detail_screen.dart` fails to analyze once `image_cropper` is gone).
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add pubspec.yaml pubspec.lock lib/screens/crop_screen.dart
+git add pubspec.yaml pubspec.lock lib/screens/crop_screen.dart lib/screens/pack_detail_screen.dart
 git commit -m "Add CropScreen (crop_your_image), replacing image_cropper's unthemeable native crop UI"
 ```
 
 ---
 
-## Task 7: `PackListScreen` (Home) redesign
+## Task 8: `PackListScreen` (Home) redesign
 
 **Files:**
 - Create: `lib/widgets/app_sheet.dart`
@@ -1116,7 +2208,7 @@ git commit -m "Add CropScreen (crop_your_image), replacing image_cropper's unthe
 - Modify: `lib/screens/pack_list_screen.dart`
 
 **Interfaces:**
-- Produces: `Future<T?> showAppSheet<T>(BuildContext context, WidgetBuilder builder)`, `Widget sheetDragHandle(BuildContext context)` — reused by Task 8/9's sheets.
+- Produces: `Future<T?> showAppSheet<T>(BuildContext context, WidgetBuilder builder)`, `Widget sheetDragHandle(BuildContext context)` — reused by Task 9/10's sheets.
 - `PackListTile({required StickerPack pack, required VoidCallback onTap, required VoidCallback onMenu})` (replaces the old `onDelete` param — delete now lives behind the overflow sheet).
 
 - [ ] **Step 1: Write `lib/widgets/app_sheet.dart`**
@@ -1124,11 +2216,13 @@ git commit -m "Add CropScreen (crop_your_image), replacing image_cropper's unthe
 ```dart
 import 'package:flutter/material.dart';
 
+import '../theme.dart';
+
 Future<T?> showAppSheet<T>(BuildContext context, WidgetBuilder builder) {
   return showModalBottomSheet<T>(
     context: context,
     isScrollControlled: true,
-    backgroundColor: Theme.of(context).colorScheme.surface,
+    backgroundColor: Theme.of(context).extension<AppColors>()!.surf,
     shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(32))),
     builder: (sheetContext) => Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.of(sheetContext).viewInsets.bottom),
@@ -1144,7 +2238,7 @@ Widget sheetDragHandle(BuildContext context) {
       height: 4,
       margin: const EdgeInsets.only(top: 12, bottom: 16),
       decoration: BoxDecoration(
-        color: Theme.of(context).dividerColor,
+        color: Theme.of(context).extension<AppColors>()!.line,
         borderRadius: BorderRadius.circular(2),
       ),
     ),
@@ -1433,7 +2527,7 @@ class PackListScreen extends StatelessWidget {
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              state is PackListLoaded && state.packs.isNotEmpty
+                              state.status == PackListStatus.loaded && state.packs.isNotEmpty
                                   ? '${state.packs.length} packs · stored on this device'
                                   : 'Stored on this device',
                               style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: colors.mut),
@@ -1453,7 +2547,7 @@ class PackListScreen extends StatelessWidget {
                   ),
                 ),
                 Expanded(
-                  child: state is! PackListLoaded
+                  child: state.status != PackListStatus.loaded
                       ? const Center(child: CircularProgressIndicator())
                       : state.packs.isEmpty
                           ? Padding(
@@ -1558,7 +2652,7 @@ git commit -m "Redesign PackListScreen (Home): header, empty state, pack cards, 
 
 ---
 
-## Task 8: `PackDetailScreen` redesign, part A — layout, tray/crop, grid, CTA, overflow
+## Task 9: `PackDetailScreen` redesign, part A — layout, tray/crop, grid, CTA, overflow
 
 **Files:**
 - Modify: `lib/widgets/sticker_grid_tile.dart`
@@ -1566,7 +2660,7 @@ git commit -m "Redesign PackListScreen (Home): header, empty state, pack cards, 
 
 **Interfaces:**
 - `StickerGridTile({required String filePath, required bool isAnimated, required VoidCallback onRemove})`.
-- `PackDetailScreen` now provides `ImportBloc` at its own level (via `BlocProvider`, alongside the `PackDetailBloc` provided by its pusher) — Task 9 adds the listener that drives the processing sheet from it; Task 10 makes `ImportScreen` pop immediately after dispatching into this same bloc instance (passed down via `BlocProvider.value`, same pattern as `PackDetailBloc` already uses).
+- `PackDetailScreen` now provides `ImportBloc` at its own level (via `BlocProvider`, alongside the `PackDetailBloc` provided by its pusher) — Task 10 adds the listener that drives the processing sheet from it; Task 11 makes `ImportScreen` pop immediately after dispatching into this same bloc instance (passed down via `BlocProvider.value`, same pattern as `PackDetailBloc` already uses).
 
 - [ ] **Step 1: Redesign `lib/widgets/sticker_grid_tile.dart`**
 
@@ -1797,7 +2891,7 @@ class _PackDetailScreenState extends State<PackDetailScreen> {
     }
   }
 
-  Widget _bottomCta(BuildContext context, PackDetailLoaded state) {
+  Widget _bottomCta(BuildContext context, PackDetailState state) {
     final colors = Theme.of(context).extension<AppColors>()!;
     if (state.canAddToWhatsApp) {
       return SizedBox(
@@ -1813,8 +2907,8 @@ class _PackDetailScreenState extends State<PackDetailScreen> {
         ),
       );
     }
-    final n = state.pack.stickers.length;
-    final noTray = state.pack.trayIconPath == null;
+    final n = state.pack!.stickers.length;
+    final noTray = state.pack!.trayIconPath == null;
     final help = noTray && n < 3
         ? 'Add 3–30 stickers and set a tray icon to continue.'
         : noTray
@@ -1840,9 +2934,9 @@ class _PackDetailScreenState extends State<PackDetailScreen> {
     );
   }
 
-  // Placeholder wired up fully in Task 9 — kept here so this task compiles
+  // Placeholder wired up fully in Task 10 — kept here so this task compiles
   // and the button above has somewhere real to call.
-  void _openWaConfirmSheet(BuildContext context, PackDetailLoaded state) {}
+  void _openWaConfirmSheet(BuildContext context, PackDetailState state) {}
 
   @override
   Widget build(BuildContext context) {
@@ -1853,7 +2947,8 @@ class _PackDetailScreenState extends State<PackDetailScreen> {
         thumbnailFetcher: LinkThumbnailFetcher(),
       ),
       child: BlocListener<PackDetailBloc, PackDetailState>(
-        listenWhen: (previous, current) => previous is PackDetailLoaded && current is PackDetailNotFound,
+        listenWhen: (previous, current) =>
+            previous.status == PackDetailStatus.loaded && current.status == PackDetailStatus.notFound,
         listener: (context, state) {
           Navigator.of(context).pop();
           showToast(context, 'Pack deleted');
@@ -1861,13 +2956,13 @@ class _PackDetailScreenState extends State<PackDetailScreen> {
         child: BlocBuilder<PackDetailBloc, PackDetailState>(
           builder: (context, state) {
             final colors = Theme.of(context).extension<AppColors>()!;
-            if (state is PackDetailNotFound) {
+            if (state.status == PackDetailStatus.notFound) {
               return const Scaffold(body: Center(child: Text('Pack not found')));
             }
-            if (state is! PackDetailLoaded) {
+            if (state.status != PackDetailStatus.loaded) {
               return const Scaffold(body: Center(child: CircularProgressIndicator()));
             }
-            final pack = state.pack;
+            final pack = state.pack!;
             final n = pack.stickers.length;
             return Scaffold(
               body: SafeArea(
@@ -2096,7 +3191,7 @@ Expected: clean.
 
 - [ ] **Step 4: Manual verification**
 
-Run: `fvm flutter run`. Confirm: Detail header (back/name/dark-toggle/overflow) renders; tray card's "Set icon"/"Change" opens the image picker then `CropScreen`, and confirming there sets the tray icon; sticker grid renders with the new tile styling; bottom CTA shows the correct disabled+helper-text state below 3 stickers or with no tray icon, and switches to the enabled "Add to WhatsApp" style once eligible (tapping it does nothing yet — Task 9); overflow menu's Rename/Delete both work and Delete pops back to Home with a toast.
+Run: `fvm flutter run`. Confirm: Detail header (back/name/dark-toggle/overflow) renders; tray card's "Set icon"/"Change" opens the image picker then `CropScreen`, and confirming there sets the tray icon; sticker grid renders with the new tile styling; bottom CTA shows the correct disabled+helper-text state below 3 stickers or with no tray icon, and switches to the enabled "Add to WhatsApp" style once eligible (tapping it does nothing yet — Task 10); overflow menu's Rename/Delete both work and Delete pops back to Home with a toast.
 
 - [ ] **Step 5: Commit**
 
@@ -2107,14 +3202,14 @@ git commit -m "Redesign PackDetailScreen: header, tray/crop card, sticker grid, 
 
 ---
 
-## Task 9: `PackDetailScreen` redesign, part B — processing sheet, WhatsApp sheets/dialog
+## Task 10: `PackDetailScreen` redesign, part B — processing sheet, WhatsApp sheets/dialog
 
 **Files:**
 - Modify: `lib/screens/pack_detail_screen.dart`
 
 **Interfaces:**
-- Consumes: `ImportBloc`'s states (`ImportProcessing(current, total)`, `ImportReady(paths, type)`, `ImportFailure(message)`) via a `BlocListener` added at the same level as the one from Task 8.
-- Replaces the `_openWaConfirmSheet` stub from Task 8 with a real implementation.
+- Consumes: `ImportBloc`'s single `ImportState` (status enum `ImportStatus` + nullable payload fields, per Task 6) via a `BlocListener` added at the same level as the one from Task 9.
+- Replaces the `_openWaConfirmSheet` stub from Task 9 with a real implementation.
 
 - [ ] **Step 1: Add the processing-sheet listener and WhatsApp sheets/dialog**
 
@@ -2136,27 +3231,26 @@ Replace the `_openWaConfirmSheet` stub with:
   }
 
   void _handleImportState(BuildContext context, ImportState state) {
-    if (state is ImportProcessing || state is ImportFailure) {
+    if (state.status == ImportStatus.processing || state.status == ImportStatus.failure) {
       _openProcessingSheetIfNeeded(context);
-    } else if (state is ImportReady) {
-      context.read<PackDetailBloc>().add(StickersAdded(state.processedFilePaths, state.type));
+    } else if (state.status == ImportStatus.ready) {
+      final paths = state.processedFilePaths!;
+      context.read<PackDetailBloc>().add(StickersAdded(paths, state.type!));
       Future.delayed(const Duration(milliseconds: 950), () {
         if (_procSheetOpen && context.mounted) Navigator.of(context).pop();
         if (context.mounted) {
           showToast(
             context,
-            state.processedFilePaths.length > 1
-                ? '${state.processedFilePaths.length} stickers added'
-                : 'Sticker added',
+            paths.length > 1 ? '${paths.length} stickers added' : 'Sticker added',
           );
         }
       });
     }
   }
 
-  Future<void> _openWaConfirmSheet(BuildContext context, PackDetailLoaded state) async {
+  Future<void> _openWaConfirmSheet(BuildContext context, PackDetailState state) async {
     final handoff = context.read<WhatsAppHandoff>();
-    final pack = state.pack;
+    final pack = state.pack!;
     await showAppSheet<void>(context, (sheetContext) {
       final colors = Theme.of(sheetContext).extension<AppColors>()!;
       return Padding(
@@ -2324,7 +3418,7 @@ Replace the `_openWaConfirmSheet` stub with:
   }
 ```
 
-Remove the `_openWaConfirmSheet` stub method left over from Task 8.
+Remove the `_openWaConfirmSheet` stub method left over from Task 9.
 
 Add `_ProcessingSheetContent` as a private widget at the bottom of the file (below the closing brace of `_PackDetailScreenState`):
 
@@ -2340,17 +3434,17 @@ class _ProcessingSheetContent extends StatelessWidget {
     return BlocBuilder<ImportBloc, ImportState>(
       builder: (context, state) {
         final colors = Theme.of(context).extension<AppColors>()!;
-        final busy = state is ImportProcessing;
-        final failed = state is ImportFailure;
-        final total = state is ImportProcessing ? state.total : null;
-        final current = state is ImportProcessing ? state.current : null;
+        final busy = state.status == ImportStatus.processing;
+        final failed = state.status == ImportStatus.failure;
+        final total = state.total;
+        final current = state.current;
         final title = failed
             ? "Couldn't add sticker"
             : total != null && total > 1
                 ? 'Adding stickers'
                 : 'Preparing your sticker…';
         final subtitle = failed
-            ? (state as ImportFailure).message
+            ? state.failureMessage ?? ''
             : total != null && total > 1
                 ? '${current ?? 1} of $total'
                 : 'Resizing to 512×512 and converting to WebP';
@@ -2419,7 +3513,8 @@ Now wire the listener into `build()`. Wrap the existing `BlocListener<PackDetail
       child: MultiBlocListener(
         listeners: [
           BlocListener<PackDetailBloc, PackDetailState>(
-            listenWhen: (previous, current) => previous is PackDetailLoaded && current is PackDetailNotFound,
+            listenWhen: (previous, current) =>
+                previous.status == PackDetailStatus.loaded && current.status == PackDetailStatus.notFound,
             listener: (context, state) {
               Navigator.of(context).pop();
               showToast(context, 'Pack deleted');
@@ -2441,7 +3536,7 @@ import '../blocs/import/import_event.dart';
 import '../blocs/import/import_state.dart';
 ```
 
-(`import_bloc.dart` already imports `ImportBloc`; `ImportEvent`/`ImportState` need their own imports since `_handleImportState` and `_ProcessingSheetContent` reference `ImportProcessing`/`ImportFailure`/`ImportReady` directly.)
+(`import_bloc.dart` already imports `ImportBloc`; `ImportEvent`/`ImportState` need their own imports since `_handleImportState` and `_ProcessingSheetContent` reference `ImportState`/`ImportStatus` directly.)
 
 - [ ] **Step 2: Verify**
 
@@ -2450,7 +3545,7 @@ Expected: clean.
 
 - [ ] **Step 3: Manual verification**
 
-Run: `fvm flutter run`. Confirm: adding stickers (from Task 10's still-old `ImportScreen` for now, or by temporarily testing after Task 10) shows the processing sheet with a live progress bar for multi-image picks, and a spinner-less single-item message for GIF/link; a forced failure (e.g. airplane mode during a link import) shows the failure state with Cancel; tapping "Add to WhatsApp" when eligible opens the confirm sheet, and completing it shows the success sheet; if WhatsApp isn't installed on the test device, the centered "WhatsApp isn't installed" dialog appears instead.
+Run: `fvm flutter run`. Confirm: adding stickers (from Task 11's still-old `ImportScreen` for now, or by temporarily testing after Task 11) shows the processing sheet with a live progress bar for multi-image picks, and a spinner-less single-item message for GIF/link; a forced failure (e.g. airplane mode during a link import) shows the failure state with Cancel; tapping "Add to WhatsApp" when eligible opens the confirm sheet, and completing it shows the success sheet; if WhatsApp isn't installed on the test device, the centered "WhatsApp isn't installed" dialog appears instead.
 
 - [ ] **Step 4: Commit**
 
@@ -2461,14 +3556,14 @@ git commit -m "Add PackDetailScreen's processing sheet with live progress and th
 
 ---
 
-## Task 10: `ImportScreen` redesign — segmented tabs, device/link tabs, pop-immediately
+## Task 11: `ImportScreen` redesign — segmented tabs, device/link tabs, pop-immediately
 
 **Files:**
 - Modify: `lib/screens/import_screen.dart`
 
 **Interfaces:**
-- Consumes: the `ImportBloc` and `PackDetailBloc` now provided above it by `PackDetailScreen` (Task 8's `_openImportScreen`), via `BlocProvider.value`.
-- No longer dispatches `StickersAdded` itself (that moved to `PackDetailScreen`'s `ImportBloc` listener in Task 9) and no longer waits for `ImportReady` before popping.
+- Consumes: the `ImportBloc` and `PackDetailBloc` now provided above it by `PackDetailScreen` (Task 9's `_openImportScreen`), via `BlocProvider.value`.
+- No longer dispatches `StickersAdded` itself (that moved to `PackDetailScreen`'s `ImportBloc` listener in Task 10) and no longer waits for `ImportReady` before popping.
 
 - [ ] **Step 1: Replace `lib/screens/import_screen.dart`**
 
@@ -2657,7 +3752,7 @@ class _ImportScreenState extends State<ImportScreen> {
                 child: const Text('Import', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
               ),
             ),
-            if (state is ImportProcessing) ...[
+            if (state.status == ImportStatus.processing) ...[
               const SizedBox(height: 22),
               Center(
                 child: Column(
@@ -2669,11 +3764,11 @@ class _ImportScreenState extends State<ImportScreen> {
                 ),
               ),
             ],
-            if (state is ImportThumbnailPreview) ...[
+            if (state.status == ImportStatus.thumbnailPreview) ...[
               const SizedBox(height: 22),
               ClipRRect(
                 borderRadius: BorderRadius.circular(26),
-                child: Image.file(File(state.localPreviewPath), width: double.infinity, fit: BoxFit.cover),
+                child: Image.file(File(state.thumbnailPath!), width: double.infinity, fit: BoxFit.cover),
               ),
               const SizedBox(height: 12),
               Row(
@@ -2700,7 +3795,7 @@ class _ImportScreenState extends State<ImportScreen> {
                 ],
               ),
             ],
-            if (state is ImportFailure) ...[
+            if (state.status == ImportStatus.failure) ...[
               const SizedBox(height: 22),
               Container(
                 padding: const EdgeInsets.all(20),
@@ -2708,7 +3803,7 @@ class _ImportScreenState extends State<ImportScreen> {
                 child: Column(
                   children: [
                     Text(
-                      state.message,
+                      state.failureMessage ?? '',
                       textAlign: TextAlign.center,
                       style: TextStyle(fontSize: 13.5, color: colors.mut),
                     ),
@@ -2869,6 +3964,7 @@ git commit -m "Redesign ImportScreen: segmented tabs, device/link tab UI, pop-im
 
 ## Self-Review Notes
 
-- **Spec coverage:** dark mode (Task 1), app icon/logo (Task 2), rename/delete (Tasks 3, 7, 8), processing sheet with live progress (Tasks 4, 9), toast (Task 5), custom `CropScreen` (Task 6), Home redesign (Task 7), Detail redesign incl. the `ImportBloc` lifetime move (Tasks 8–9), Import redesign incl. pop-immediately (Task 10), "Stickerbox" rename (Task 1's `main.dart`, Task 7's header) — every in-scope spec item maps to a task above.
-- **Root-cause fix, not a patch:** `ImportReady` gaining a `type` field (Task 4) replaces `ImportScreen`'s old `_pendingType` instance-field tracking, which would have silently broken once Import started popping before `ImportReady` arrived (Task 10) — the type now travels with the bloc's own state instead of living in a widget that no longer exists when it's needed.
-- **Type consistency check:** `StickerGridTile(filePath, isAnimated, onRemove)` (Task 8) matches its one call site in the same task. `PackListTile(pack, onTap, onMenu)` (Task 7) matches its one call site in the same task. `showAppSheet<T>(context, WidgetBuilder)` (Task 7) is used with matching signatures in Tasks 7, 8, 9. `ImportReady(paths, type)` (Task 4) matches every construction site in `import_bloc.dart` (same task) and every consumer (`PackDetailScreen._handleImportState` in Task 9).
+- **Spec coverage:** dark mode (Task 1), app icon/logo (Task 2), rename/delete (Tasks 3, 8, 9), processing sheet with live progress (Tasks 4, 10), toast (Task 5), state-shape refactor to single-class-per-bloc (Task 6, inserted after initial approval per explicit follow-up request), custom `CropScreen` (Task 7), Home redesign (Task 8), Detail redesign incl. the `ImportBloc` lifetime move (Tasks 9–10), Import redesign incl. pop-immediately (Task 11), "Stickerbox" rename (Task 1's `main.dart`, Task 8's header) — every in-scope spec item maps to a task above.
+- **Root-cause fix, not a patch:** `ImportState` gaining a `type` field on its ready status (Task 4, later folded into the single-class shape by Task 6) replaces `ImportScreen`'s old `_pendingType` instance-field tracking, which would have silently broken once Import started popping before the ready status arrived (Task 11) — the type now travels with the bloc's own state instead of living in a widget that no longer exists when it's needed.
+- **Sequencing note:** Task 6 (state-shape refactor) was inserted between Tasks 5 and 7 after Tasks 1–5 were already implemented and reviewed against the plan's original sealed-class design — Tasks 1, 3, and 4 remain historically accurate records of what was actually built at the time (their code blocks still show `PackDetailLoaded`/`ImportReady`/etc. as sealed subclasses, which is what Task 6 then collapses). Tasks 8–11 were written/rewritten against the post-Task-6 single-class shape from the start, per the plan's `.status ==` convention (see Task 6's Interfaces note) — no task from 7 onward references a sealed state subclass.
+- **Type consistency check:** `StickerGridTile(filePath, isAnimated, onRemove)` (Task 9) matches its one call site in the same task. `PackListTile(pack, onTap, onMenu)` (Task 8) matches its one call site in the same task. `showAppSheet<T>(context, WidgetBuilder)` (Task 8) is used with matching signatures in Tasks 8, 9, 10. `PackListState({status, packs})`, `PackDetailState({status, pack, canAddToWhatsApp})`, `ImportState({status, current, total, thumbnailPath, processedFilePaths, type, failureMessage})` (all Task 6) match every construction site in their respective blocs (same task) and every consumer in Tasks 8–11.
