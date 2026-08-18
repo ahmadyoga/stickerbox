@@ -16,6 +16,17 @@ class StickerPack {
   String publisherName;
   String? trayIconPath;
   final List<Sticker> stickers;
+
+  /// Detached copy. Hive's non-lazy box hands back the same cached instance on
+  /// every read, so mutating it in place would leave bloc states comparing
+  /// equal (identity) to their pre-mutation snapshot and the emit gets dropped.
+  StickerPack copy() => StickerPack(
+        id: id,
+        name: name,
+        publisherName: publisherName,
+        trayIconPath: trayIconPath,
+        stickers: List.of(stickers),
+      );
 }
 
 class StickerPackAdapter extends TypeAdapter<StickerPack> {

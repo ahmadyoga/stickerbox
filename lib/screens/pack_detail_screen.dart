@@ -202,26 +202,56 @@ class _PackDetailScreenState extends State<PackDetailScreen> {
   void _openProcessingSheetIfNeeded(BuildContext context) {
     if (_procSheetOpen) return;
     _procSheetOpen = true;
-    showAppSheet<void>(context, (sheetContext) => _ProcessingSheetContent(closeSelf: () {
+    // showAppSheet is a bare showModalBottomSheet: only InheritedTheme crosses
+    // that boundary, so the ImportBloc has to be re-supplied by value.
+    final importBloc = context.read<ImportBloc>();
+    showAppSheet<void>(
+      context,
+      (sheetContext) => BlocProvider.value(
+        value: importBloc,
+        child: _ProcessingSheetContent(closeSelf: () {
           if (Navigator.of(sheetContext).canPop()) Navigator.of(sheetContext).pop();
-        })).then((_) => _procSheetOpen = false);
+        }),
+      ),
+    ).then((_) => _procSheetOpen = false);
+  }
+
+  /// Pops the processing sheet using PackDetail's own context. Only pops when
+  /// something is still stacked above PackDetail — a manually-dragged-away sheet
+  /// can leave `_procSheetOpen` true for a frame, and popping then would take
+  /// PackDetailScreen itself with it.
+  void _closeProcessingSheet(BuildContext context) {
+    if (!_procSheetOpen || !context.mounted) return;
+    if (ModalRoute.of(context)?.isCurrent ?? true) return;
+    Navigator.of(context).pop();
   }
 
   void _handleImportState(BuildContext context, ImportState state) {
-    if (state.status == ImportStatus.processing || state.status == ImportStatus.failure) {
-      _openProcessingSheetIfNeeded(context);
-    } else if (state.status == ImportStatus.ready) {
-      final paths = state.processedFilePaths!;
-      context.read<PackDetailBloc>().add(StickersAdded(paths, state.type!));
-      Future.delayed(const Duration(milliseconds: 950), () {
-        if (_procSheetOpen && context.mounted) Navigator.of(context).pop();
-        if (context.mounted) {
+    // The link tab stays open to show its own inline preview/error UI, so don't
+    // stack the processing sheet on top of it.
+    final isCurrentRoute = ModalRoute.of(context)?.isCurrent ?? false;
+    switch (state.status) {
+      case ImportStatus.processing:
+      case ImportStatus.failure:
+        if (isCurrentRoute) _openProcessingSheetIfNeeded(context);
+      case ImportStatus.initial:
+      case ImportStatus.thumbnailPreview:
+        _closeProcessingSheet(context);
+      case ImportStatus.ready:
+        final paths = state.processedFilePaths!;
+        if (paths.isEmpty) {
+          _closeProcessingSheet(context);
+          return;
+        }
+        context.read<PackDetailBloc>().add(StickersAdded(paths, state.type!));
+        Future.delayed(const Duration(milliseconds: 950), () {
+          if (!context.mounted) return;
+          _closeProcessingSheet(context);
           showToast(
             context,
             paths.length > 1 ? '${paths.length} stickers added' : 'Sticker added',
           );
-        }
-      });
+        });
     }
   }
 
@@ -294,12 +324,22 @@ class _PackDetailScreenState extends State<PackDetailScreen> {
                 ),
                 onPressed: () async {
                   Navigator.of(sheetContext).pop();
-                  if (!await handoff.isWhatsAppInstalled()) {
-                    if (context.mounted) _showWaMissingDialog(context);
-                    return;
+                  try {
+                    if (!await handoff.isWhatsAppInstalled()) {
+                      if (context.mounted) _showWaMissingDialog(context);
+                      return;
+                    }
+                    await handoff.addPack(pack);
+                    if (context.mounted) _openWaSuccessSheet(context, pack.name);
+                  } catch (_) {
+                    if (context.mounted) {
+                      _showWaDialog(
+                        context,
+                        'Something went wrong',
+                        "Couldn't add to WhatsApp — please try again.",
+                      );
+                    }
                   }
-                  await handoff.addPack(pack);
-                  if (context.mounted) _openWaSuccessSheet(context, pack.name);
                 },
                 child: const Text('Add to WhatsApp', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
               ),
@@ -351,7 +391,13 @@ class _PackDetailScreenState extends State<PackDetailScreen> {
     });
   }
 
-  void _showWaMissingDialog(BuildContext context) {
+  void _showWaMissingDialog(BuildContext context) => _showWaDialog(
+        context,
+        "WhatsApp isn't installed",
+        'This sticker pack can be added when WhatsApp is installed on your device.',
+      );
+
+  void _showWaDialog(BuildContext context, String title, String body) {
     showDialog<void>(
       context: context,
       builder: (dialogContext) {
@@ -365,14 +411,11 @@ class _PackDetailScreenState extends State<PackDetailScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  "WhatsApp isn't installed",
+                  title,
                   style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: colors.tx),
                 ),
                 const SizedBox(height: 8),
-                Text(
-                  'This sticker pack can be added when WhatsApp is installed on your device.',
-                  style: TextStyle(fontSize: 14, color: colors.mut),
-                ),
+                Text(body, style: TextStyle(fontSize: 14, color: colors.mut)),
                 const SizedBox(height: 20),
                 Align(
                   alignment: Alignment.centerRight,

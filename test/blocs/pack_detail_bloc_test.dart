@@ -45,6 +45,7 @@ void main() {
   late MockPackRepository repository;
   late MockStickerProcessor processor;
   late Directory tempDir;
+  late StickerPack seedPack;
 
   setUpAll(() {
     registerFallbackValue('');
@@ -54,6 +55,7 @@ void main() {
   setUp(() {
     repository = MockPackRepository();
     processor = MockStickerProcessor();
+    seedPack = _packWith(3, trayIconPath: '/tmp/tray.png');
     tempDir = Directory.systemTemp.createTempSync('pack_detail_bloc_test');
     PathProviderPlatform.instance = _FakePathProviderPlatform(tempDir.path);
   });
@@ -214,6 +216,29 @@ void main() {
       final captured = verify(() => repository.savePack(captureAny())).captured;
       expect((captured.single as StickerPack).name, 'New Name');
     },
+  );
+
+  // Regression: Hive used to hand back the same cached instance the state
+  // already held, so mutating it in place made the "new" state compare equal
+  // (StickerPack has no ==, so identity) to the old one and Bloc dropped the
+  // emit. PackRepository now returns StickerPack.copy(), simulated here.
+  blocTest<PackDetailBloc, PackDetailState>(
+    'StickerRemoved still emits when the repository hands back a copy of the pack already in state',
+    setUp: () {
+      when(() => repository.getPack('p1')).thenAnswer((_) => seedPack.copy());
+      when(() => repository.savePack(any())).thenAnswer((_) async {});
+    },
+    build: buildBloc,
+    seed: () => PackDetailState(
+      status: PackDetailStatus.loaded,
+      pack: seedPack,
+      canAddToWhatsApp: true,
+    ),
+    act: (bloc) => bloc.add(const StickerRemoved('s0')),
+    expect: () => [
+      isA<PackDetailState>().having((s) => s.pack?.stickers.length, 'pack.stickers.length', 2),
+    ],
+    verify: (_) => expect(seedPack.stickers.length, 3, reason: 'the state we came from must not be mutated'),
   );
 
   blocTest<PackDetailBloc, PackDetailState>(

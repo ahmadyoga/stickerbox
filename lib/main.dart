@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:hive/hive.dart';
 
 import 'blocs/pack_list/pack_list_bloc.dart';
@@ -15,6 +16,9 @@ import 'theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Nothing leaves the device: never fetch Nunito from Google's CDN. Falls back
+  // to the platform font until the font is bundled as a local asset.
+  GoogleFonts.config.allowRuntimeFetching = false;
   final box = await setUpHive();
   final settingsBox = await setUpSettingsBox();
   runApp(StickerCreatorApp(packsBox: box, settingsBox: settingsBox));
