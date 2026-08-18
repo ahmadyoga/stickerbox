@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../blocs/import/import_bloc.dart';
+import '../blocs/import/import_state.dart';
 import '../blocs/pack_detail/pack_detail_bloc.dart';
 import '../blocs/pack_detail/pack_detail_event.dart';
 import '../blocs/pack_detail/pack_detail_state.dart';
@@ -31,6 +32,8 @@ class PackDetailScreen extends StatefulWidget {
 }
 
 class _PackDetailScreenState extends State<PackDetailScreen> {
+  bool _procSheetOpen = false;
+
   @override
   void initState() {
     super.initState();
@@ -196,9 +199,200 @@ class _PackDetailScreenState extends State<PackDetailScreen> {
     );
   }
 
-  // Placeholder wired up fully in Task 10 — kept here so this task compiles
-  // and the button above has somewhere real to call.
-  void _openWaConfirmSheet(BuildContext context, PackDetailState state) {}
+  void _openProcessingSheetIfNeeded(BuildContext context) {
+    if (_procSheetOpen) return;
+    _procSheetOpen = true;
+    showAppSheet<void>(context, (sheetContext) => _ProcessingSheetContent(closeSelf: () {
+          if (Navigator.of(sheetContext).canPop()) Navigator.of(sheetContext).pop();
+        })).then((_) => _procSheetOpen = false);
+  }
+
+  void _handleImportState(BuildContext context, ImportState state) {
+    if (state.status == ImportStatus.processing || state.status == ImportStatus.failure) {
+      _openProcessingSheetIfNeeded(context);
+    } else if (state.status == ImportStatus.ready) {
+      final paths = state.processedFilePaths!;
+      context.read<PackDetailBloc>().add(StickersAdded(paths, state.type!));
+      Future.delayed(const Duration(milliseconds: 950), () {
+        if (_procSheetOpen && context.mounted) Navigator.of(context).pop();
+        if (context.mounted) {
+          showToast(
+            context,
+            paths.length > 1 ? '${paths.length} stickers added' : 'Sticker added',
+          );
+        }
+      });
+    }
+  }
+
+  Future<void> _openWaConfirmSheet(BuildContext context, PackDetailState state) async {
+    final handoff = context.read<WhatsAppHandoff>();
+    final pack = state.pack!;
+    await showAppSheet<void>(context, (sheetContext) {
+      final colors = Theme.of(sheetContext).extension<AppColors>()!;
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(22, 0, 22, 30),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            sheetDragHandle(sheetContext),
+            Text(
+              'Add to WhatsApp',
+              style: TextStyle(fontSize: 23, fontWeight: FontWeight.w800, color: colors.tx),
+            ),
+            const SizedBox(height: 18),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(color: colors.bg, borderRadius: BorderRadius.circular(22)),
+              child: Row(
+                children: [
+                  if (pack.trayIconPath != null)
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(20),
+                      child: Image.file(
+                        File(pack.trayIconPath!),
+                        width: 64,
+                        height: 64,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          pack.name,
+                          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: colors.tx),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          '${pack.stickers.length} stickers · tray icon set',
+                          style: TextStyle(fontSize: 13, color: colors.mut),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              'WhatsApp will open to confirm. You can keep editing this pack afterwards.',
+              style: TextStyle(fontSize: 13, color: colors.mut),
+            ),
+            const SizedBox(height: 18),
+            SizedBox(
+              width: double.infinity,
+              height: 58,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: colors.acc,
+                  foregroundColor: colors.accTx,
+                  shape: const StadiumBorder(),
+                ),
+                onPressed: () async {
+                  Navigator.of(sheetContext).pop();
+                  if (!await handoff.isWhatsAppInstalled()) {
+                    if (context.mounted) _showWaMissingDialog(context);
+                    return;
+                  }
+                  await handoff.addPack(pack);
+                  if (context.mounted) _openWaSuccessSheet(context, pack.name);
+                },
+                child: const Text('Add to WhatsApp', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ],
+        ),
+      );
+    });
+  }
+
+  void _openWaSuccessSheet(BuildContext context, String packName) {
+    showAppSheet<void>(context, (sheetContext) {
+      final colors = Theme.of(sheetContext).extension<AppColors>()!;
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(22, 0, 22, 30),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            sheetDragHandle(sheetContext),
+            Icon(Icons.celebration_outlined, size: 64, color: colors.acc),
+            const SizedBox(height: 16),
+            Text(
+              'Pack added to WhatsApp',
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: colors.tx),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '"$packName" is now available in your WhatsApp sticker tray.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13.5, color: colors.mut),
+            ),
+            const SizedBox(height: 22),
+            SizedBox(
+              width: double.infinity,
+              height: 56,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: colors.acc,
+                  foregroundColor: colors.accTx,
+                  shape: const StadiumBorder(),
+                ),
+                onPressed: () => Navigator.of(sheetContext).pop(),
+                child: const Text('Back to pack', style: TextStyle(fontSize: 16.5, fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ],
+        ),
+      );
+    });
+  }
+
+  void _showWaMissingDialog(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        final colors = Theme.of(dialogContext).extension<AppColors>()!;
+        return Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "WhatsApp isn't installed",
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: colors.tx),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'This sticker pack can be added when WhatsApp is installed on your device.',
+                  style: TextStyle(fontSize: 14, color: colors.mut),
+                ),
+                const SizedBox(height: 20),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: colors.acc,
+                      foregroundColor: colors.accTx,
+                      shape: const StadiumBorder(),
+                    ),
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    child: const Text('OK'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -208,13 +402,18 @@ class _PackDetailScreenState extends State<PackDetailScreen> {
         stickerProcessor: context.read<StickerProcessor>(),
         thumbnailFetcher: LinkThumbnailFetcher(),
       ),
-      child: BlocListener<PackDetailBloc, PackDetailState>(
-        listenWhen: (previous, current) =>
-            previous.status == PackDetailStatus.loaded && current.status == PackDetailStatus.notFound,
-        listener: (context, state) {
-          Navigator.of(context).pop();
-          showToast(context, 'Pack deleted');
-        },
+      child: MultiBlocListener(
+        listeners: [
+          BlocListener<PackDetailBloc, PackDetailState>(
+            listenWhen: (previous, current) =>
+                previous.status == PackDetailStatus.loaded && current.status == PackDetailStatus.notFound,
+            listener: (context, state) {
+              Navigator.of(context).pop();
+              showToast(context, 'Pack deleted');
+            },
+          ),
+          BlocListener<ImportBloc, ImportState>(listener: _handleImportState),
+        ],
         child: BlocBuilder<PackDetailBloc, PackDetailState>(
           builder: (context, state) {
             final colors = Theme.of(context).extension<AppColors>()!;
@@ -435,6 +634,82 @@ class _PackDetailScreenState extends State<PackDetailScreen> {
           },
         ),
       ),
+    );
+  }
+}
+
+class _ProcessingSheetContent extends StatelessWidget {
+  const _ProcessingSheetContent({required this.closeSelf});
+
+  final VoidCallback closeSelf;
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocBuilder<ImportBloc, ImportState>(
+      builder: (context, state) {
+        final colors = Theme.of(context).extension<AppColors>()!;
+        final busy = state.status == ImportStatus.processing;
+        final failed = state.status == ImportStatus.failure;
+        final total = state.total;
+        final current = state.current;
+        final title = failed
+            ? "Couldn't add sticker"
+            : total != null && total > 1
+                ? 'Adding stickers'
+                : 'Preparing your sticker…';
+        final subtitle = failed
+            ? state.failureMessage ?? ''
+            : total != null && total > 1
+                ? '${current ?? 1} of $total'
+                : 'Resizing to 512×512 and converting to WebP';
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(22, 0, 22, 30),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              sheetDragHandle(context),
+              Text(title, style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700, color: colors.tx)),
+              const SizedBox(height: 5),
+              Text(
+                subtitle,
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 13.5, color: colors.mut),
+              ),
+              if (busy) ...[
+                const SizedBox(height: 18),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(3),
+                  child: LinearProgressIndicator(
+                    value: total != null ? (current ?? 0) / total : null,
+                    minHeight: 6,
+                    backgroundColor: colors.surf2,
+                    color: colors.acc,
+                  ),
+                ),
+              ],
+              if (failed) ...[
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 2,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: colors.acc,
+                          foregroundColor: colors.accTx,
+                          shape: const StadiumBorder(),
+                        ),
+                        onPressed: closeSelf,
+                        child: const Text('Close — retry from the Import screen'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        );
+      },
     );
   }
 }
