@@ -26,7 +26,13 @@ jobs:
       - name: Rename APK
         run: mv build/app/outputs/flutter-apk/app-release.apk stickerbox-${{ github.ref_name }}.apk
 
+      - name: Extract changelog section for this tag
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          awk -v ver="$VERSION" '/^## \[/{if (p) exit; if ($0 ~ "\\[" ver "\\]") p=1; next} p' CHANGELOG.md > release_notes.md
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: stickerbox-${{ github.ref_name }}.apk
+          body_path: release_notes.md
