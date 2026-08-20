@@ -10,49 +10,75 @@ class StickerProcessor {
   static const staticTargetBytes = 100 * 1024;
   static const stickerDimension = 512;
   static const animatedTargetBytes = 500 * 1024;
-  static const maxAnimatedFrames = 24; // ~3s at 8fps, well under WhatsApp's cap
+  static const maxAnimatedFrames = 24;
   static const trayDimension = 96;
 
-  /// Resizes an image file into a 96x96 PNG tray icon.
   Future<void> encodeTrayIcon(String inputPath, String outputPath) async {
-    final source = img.decodeImage(await File(inputPath).readAsBytes());
-    if (source == null) {
-      throw StickerTooLargeException('Could not decode tray icon image');
+    try {
+      final source = img.decodeImage(await File(inputPath).readAsBytes());
+      if (source == null) {
+        throw StickerTooLargeException('Could not decode tray icon image');
+      }
+      final resized = img.copyResize(source, width: trayDimension, height: trayDimension);
+      await File(outputPath).writeAsBytes(img.encodePng(resized));
+    } catch (e) {
+      throw StickerTooLargeException('Tray icon encoding failed: $e');
     }
-    final resized = img.copyResize(source, width: trayDimension, height: trayDimension);
-    await File(outputPath).writeAsBytes(img.encodePng(resized));
   }
 
-  /// Encodes a single image file into a WhatsApp-compliant static WebP
-  /// sticker, writing the result to [outputPath].
   Future<void> encodeStatic(String inputPath, String outputPath) async {
-    var quality = 90;
-    while (true) {
-      final bytes = await FlutterImageCompress.compressWithFile(
-        inputPath,
-        format: CompressFormat.webp,
-        minWidth: stickerDimension,
-        minHeight: stickerDimension,
-        quality: quality,
-      );
-      if (bytes == null) {
-        throw StickerTooLargeException('Failed to encode sticker image');
+    try {
+      // Read and decode source image
+      final sourceBytes = await File(inputPath).readAsBytes();
+      final decoded = img.decodeImage(sourceBytes);
+      if (decoded == null) {
+        throw StickerTooLargeException('Could not decode sticker image from $inputPath');
       }
-      final next = nextStaticQuality(
-        currentQuality: quality,
-        currentSizeBytes: bytes.length,
-        targetBytes: staticTargetBytes,
-      );
-      if (next == null) {
-        await File(outputPath).writeAsBytes(bytes);
-        return;
+      
+      // Resize to exactly 512x512
+      final resized = img.copyResize(decoded, width: stickerDimension, height: stickerDimension);
+      
+      // Save as temporary PNG
+      final tempBytes = img.encodePng(resized);
+      final tempDir = await Directory.systemTemp.createTemp('sticker_');
+      final tempPath = '${tempDir.path}/temp.png';
+      await File(tempPath).writeAsBytes(tempBytes);
+      
+      try {
+        var quality = 90;
+        while (true) {
+          final bytes = await FlutterImageCompress.compressWithFile(
+            tempPath,
+            format: CompressFormat.webp,
+            minWidth: stickerDimension,
+            minHeight: stickerDimension,
+            quality: quality,
+          );
+          if (bytes == null) {
+            throw StickerTooLargeException('FlutterImageCompress returned null for $inputPath');
+          }
+          final next = nextStaticQuality(
+            currentQuality: quality,
+            currentSizeBytes: bytes.length,
+            targetBytes: staticTargetBytes,
+          );
+          if (next == null) {
+            await File(outputPath).writeAsBytes(bytes);
+            return;
+          }
+          quality = next;
+        }
+      } finally {
+        try {
+          await tempDir.delete(recursive: true);
+        } catch (_) {}
       }
-      quality = next;
+    } catch (e) {
+      if (e is StickerTooLargeException) rethrow;
+      throw StickerTooLargeException('Failed to encode static sticker: $e');
     }
   }
 
-  /// Encodes a GIF file into a WhatsApp-compliant animated WebP sticker,
-  /// writing the result to [outputPath].
   Future<void> encodeAnimatedGif(String inputPath, String outputPath) async {
     final decoded = img.decodeGif(await File(inputPath).readAsBytes());
     if (decoded == null || decoded.frames.isEmpty) {
@@ -94,30 +120,21 @@ class StickerProcessor {
     }
   }
 
-  /// Encodes [frames] (all the same size) as an animated WebP file.
-  ///
-  /// The installed `image` package's [img.WebPEncoder] only knows how to
-  /// write a single lossless VP8L frame (`supportsAnimation` is `false`), so
-  /// it can't be used directly for a multi-frame sticker. Each frame is
-  /// instead lossless-encoded on its own via [img.WebPEncoder], and the
-  /// resulting VP8L chunks are wrapped by hand in a standard animated-WebP
-  /// RIFF container (VP8X + ANIM + one ANMF per frame), which is what
-  /// WhatsApp (and `img.decodeWebP`) expect.
   Uint8List _encodeAnimatedWebP(List<img.Image> frames) {
     final width = frames.first.width;
     final height = frames.first.height;
     final encoder = img.WebPEncoder();
 
     final vp8x = <int>[
-      0x02, // flags: animation bit set, everything else off
-      ..._uint24le(0), // reserved
+      0x02,
+      ..._uint24le(0),
       ..._uint24le(width - 1),
       ..._uint24le(height - 1),
     ];
 
     final anim = <int>[
-      0xff, 0xff, 0xff, 0xff, // background color (opaque white)
-      ..._uint16le(0), // loop count: 0 = infinite
+      0xff, 0xff, 0xff, 0xff,
+      ..._uint16le(0),
     ];
 
     final body = BytesBuilder()
@@ -125,17 +142,16 @@ class StickerProcessor {
       ..add(_riffChunk('ANIM', anim));
 
     for (final frame in frames) {
-      // Full single-frame WebP file: 'RIFF' + size(4) + 'WEBP' + VP8L chunk.
       final singleFrameWebP = encoder.encode(frame, singleFrame: true);
       final vp8lChunk = singleFrameWebP.sublist(12);
       final duration = frame.frameDuration > 0 ? frame.frameDuration : 100;
       final anmfPayload = <int>[
-        ..._uint24le(0), // frame x offset
-        ..._uint24le(0), // frame y offset
+        ..._uint24le(0),
+        ..._uint24le(0),
         ..._uint24le(frame.width - 1),
         ..._uint24le(frame.height - 1),
-        ..._uint24le(duration), // duration in ms
-        0x00, // reserved/blend/dispose flags
+        ..._uint24le(duration),
+        0x00,
         ...vp8lChunk,
       ];
       body.add(_riffChunk('ANMF', anmfPayload));

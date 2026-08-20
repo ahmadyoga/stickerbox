@@ -1,4 +1,4 @@
-# sticker_creator
+# Stickerbox
 
 A new Flutter project.
 

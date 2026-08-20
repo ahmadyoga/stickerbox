@@ -3,8 +3,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
-import 'package:sticker_creator/hive/hive_setup.dart';
-import 'package:sticker_creator/models/sticker_pack.dart';
+import 'package:stickerbox/hive/hive_setup.dart';
+import 'package:stickerbox/models/sticker_pack.dart';
 
 /// Fakes getApplicationDocumentsDirectory() so setUpHive() can run under
 /// plain flutter_test without a real platform channel.

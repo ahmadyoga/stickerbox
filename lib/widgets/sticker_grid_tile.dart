@@ -10,16 +10,20 @@ class StickerGridTile extends StatelessWidget {
     required this.filePath,
     required this.isAnimated,
     required this.onRemove,
+    this.onTap,
   });
 
   final String filePath;
   final bool isAnimated;
   final VoidCallback onRemove;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).extension<AppColors>()!;
-    return Container(
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
@@ -58,6 +62,7 @@ class StickerGridTile extends StatelessWidget {
             ),
           ),
         ],
+      ),
       ),
     );
   }

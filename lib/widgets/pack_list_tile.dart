@@ -47,7 +47,7 @@ class PackListTile extends StatelessWidget {
                       child: Text(
                         'no\ntray',
                         textAlign: TextAlign.center,
-                        style: TextStyle(fontFamily: 'monospace', fontSize: 9, color: colors.mut),
+                        style: TextStyle(fontFamily: 'JetBrains Mono', fontSize: 9, color: colors.mut),
                       ),
                     ),
             ),

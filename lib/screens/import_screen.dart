@@ -21,6 +21,7 @@ class ImportScreen extends StatefulWidget {
 class _ImportScreenState extends State<ImportScreen> {
   final _urlController = TextEditingController();
   bool _onDeviceTab = true;
+  final Set<int> _selectedIndices = {};
 
   @override
   void dispose() {
@@ -103,7 +104,10 @@ class _ImportScreenState extends State<ImportScreen> {
         _PickCard(
           title: 'Bring in a GIF',
           subtitle: 'GIFs always come in as animated stickers.',
-          leading: Text('GIF', style: TextStyle(fontWeight: FontWeight.w700, color: colors.tx)),
+          leading: Text(
+            'GIF',
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, fontFamily: 'JetBrains Mono', color: colors.tx),
+          ),
           onTap: () => _dispatchAndClose(const PickGifRequested()),
         ),
         const SizedBox(height: 12),
@@ -121,7 +125,17 @@ class _ImportScreenState extends State<ImportScreen> {
 
   Widget _buildLinkTab(BuildContext context) {
     final colors = Theme.of(context).extension<AppColors>()!;
-    return BlocBuilder<ImportBloc, ImportState>(
+    return BlocConsumer<ImportBloc, ImportState>(
+      listenWhen: (previous, current) =>
+          current.status == ImportStatus.thumbnailPreview &&
+          !identical(previous.thumbnailPaths, current.thumbnailPaths),
+      listener: (context, state) {
+        setState(() {
+          _selectedIndices
+            ..clear()
+            ..addAll(List.generate(state.thumbnailPaths!.length, (i) => i));
+        });
+      },
       builder: (context, state) {
         final hasText = _urlController.text.trim().isNotEmpty;
         return Column(
@@ -143,19 +157,15 @@ class _ImportScreenState extends State<ImportScreen> {
                   ),
                 ),
                 const SizedBox(width: 9),
-                SizedBox(
-                  width: 78,
-                  height: 54,
-                  child: OutlinedButton(
-                    onPressed: () async {
-                      final data = await Clipboard.getData('text/plain');
-                      if (data?.text != null) {
-                        _urlController.text = data!.text!;
-                        setState(() {});
-                      }
-                    },
-                    child: const Text('Paste'),
-                  ),
+                OutlinedButton(
+                  onPressed: () async {
+                    final data = await Clipboard.getData('text/plain');
+                    if (data?.text != null) {
+                      _urlController.text = data!.text!;
+                      setState(() {});
+                    }
+                  },
+                  child: const Text('Paste'),
                 ),
               ],
             ),
@@ -198,10 +208,63 @@ class _ImportScreenState extends State<ImportScreen> {
             ],
             if (state.status == ImportStatus.thumbnailPreview) ...[
               const SizedBox(height: 22),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(26),
-                child: Image.file(File(state.thumbnailPath!), width: double.infinity, fit: BoxFit.cover),
-              ),
+              if (state.thumbnailPaths!.length == 1)
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(26),
+                  child: Image.file(File(state.thumbnailPaths!.first), width: double.infinity, fit: BoxFit.cover),
+                )
+              else ...[
+                Text(
+                  'Found ${state.thumbnailPaths!.length} images — tap to pick which ones to add',
+                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: colors.mut),
+                ),
+                const SizedBox(height: 10),
+                GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3,
+                    mainAxisSpacing: 8,
+                    crossAxisSpacing: 8,
+                  ),
+                  itemCount: state.thumbnailPaths!.length,
+                  itemBuilder: (context, index) {
+                    final selected = _selectedIndices.contains(index);
+                    return GestureDetector(
+                      onTap: () => setState(() {
+                        if (selected) {
+                          _selectedIndices.remove(index);
+                        } else {
+                          _selectedIndices.add(index);
+                        }
+                      }),
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(16),
+                            child: Opacity(
+                              opacity: selected ? 1 : 0.35,
+                              child: Image.file(File(state.thumbnailPaths![index]), fit: BoxFit.cover),
+                            ),
+                          ),
+                          if (selected)
+                            Positioned(
+                              right: 5,
+                              top: 5,
+                              child: Container(
+                                width: 20,
+                                height: 20,
+                                decoration: BoxDecoration(color: colors.acc, shape: BoxShape.circle),
+                                child: const Icon(Icons.check, size: 14, color: Colors.white),
+                              ),
+                            ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ],
               const SizedBox(height: 12),
               Row(
                 children: [
@@ -220,8 +283,18 @@ class _ImportScreenState extends State<ImportScreen> {
                         foregroundColor: colors.accTx,
                         shape: const StadiumBorder(),
                       ),
-                      onPressed: () => _dispatchAndClose(const LinkThumbnailConfirmed()),
-                      child: const Text('Add Sticker'),
+                      onPressed: _selectedIndices.isEmpty
+                          ? null
+                          : () {
+                              final paths = state.thumbnailPaths!;
+                              final selected = paths.length == 1
+                                  ? paths
+                                  : (_selectedIndices.toList()..sort()).map((i) => paths[i]).toList();
+                              _dispatchAndClose(LinkThumbnailConfirmed(selected));
+                            },
+                      child: Text(
+                        _selectedIndices.length > 1 ? 'Add ${_selectedIndices.length} Stickers' : 'Add Sticker',
+                      ),
                     ),
                   ),
                 ],

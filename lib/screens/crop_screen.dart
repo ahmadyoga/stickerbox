@@ -81,7 +81,10 @@ class _CropScreenState extends State<CropScreen> {
                   ),
                   const Padding(
                     padding: EdgeInsets.only(right: 16),
-                    child: Text('1:1 · 96×96', style: TextStyle(color: Colors.white54, fontSize: 11)),
+                    child: Text(
+                      '1:1 · 96×96',
+                      style: TextStyle(color: Colors.white54, fontSize: 11, fontFamily: 'JetBrains Mono'),
+                    ),
                   ),
                 ],
               ),

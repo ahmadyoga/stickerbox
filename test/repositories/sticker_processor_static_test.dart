@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
-import 'package:sticker_creator/repositories/sticker_processor.dart';
+import 'package:stickerbox/repositories/sticker_processor.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

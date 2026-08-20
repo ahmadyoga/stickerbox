@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:mocktail/mocktail.dart';
-import 'package:sticker_creator/repositories/import_repository.dart';
+import 'package:stickerbox/repositories/import_repository.dart';
 
 class MockImagePicker extends Mock implements ImagePicker {}
 

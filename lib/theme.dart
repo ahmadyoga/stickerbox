@@ -129,6 +129,23 @@ ThemeData buildTheme({required bool dark}) {
       bodyColor: colors.tx,
       displayColor: colors.tx,
     ),
+    inputDecorationTheme: InputDecorationTheme(
+      filled: true,
+      fillColor: colors.bg,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 15, vertical: 14),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(18),
+        borderSide: BorderSide(color: colors.line, width: 1.5),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(18),
+        borderSide: BorderSide(color: colors.line, width: 1.5),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(18),
+        borderSide: BorderSide(color: colors.acc, width: 1.5),
+      ),
+    ),
     extensions: [colors],
   );
 }

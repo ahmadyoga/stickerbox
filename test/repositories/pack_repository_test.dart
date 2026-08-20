@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
-import 'package:sticker_creator/models/sticker.dart';
-import 'package:sticker_creator/models/sticker_pack.dart';
-import 'package:sticker_creator/repositories/pack_repository.dart';
+import 'package:stickerbox/models/sticker.dart';
+import 'package:stickerbox/models/sticker_pack.dart';
+import 'package:stickerbox/repositories/pack_repository.dart';
 
 void main() {
   late Box<StickerPack> box;

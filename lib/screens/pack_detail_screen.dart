@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../blocs/import/import_bloc.dart';
+import '../blocs/import/import_event.dart';
 import '../blocs/import/import_state.dart';
 import '../blocs/pack_detail/pack_detail_bloc.dart';
 import '../blocs/pack_detail/pack_detail_event.dart';
@@ -23,9 +24,13 @@ import 'crop_screen.dart';
 import 'import_screen.dart';
 
 class PackDetailScreen extends StatefulWidget {
-  const PackDetailScreen({super.key, required this.packId});
+  const PackDetailScreen({super.key, required this.packId, this.pendingThumbnailPaths});
 
   final String packId;
+
+  /// Thumbnails already fetched from a shared link (e.g. via the share-intent
+  /// bottom sheet) that should be encoded into this pack as soon as it opens.
+  final List<String>? pendingThumbnailPaths;
 
   @override
   State<PackDetailScreen> createState() => _PackDetailScreenState();
@@ -53,6 +58,55 @@ class _PackDetailScreenState extends State<PackDetailScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _showStickerOptions(BuildContext context, String stickerPath) async {
+    final colors = Theme.of(context).extension<AppColors>()!;
+    final action = await showAppSheet<String>(
+      context,
+      (sheetContext) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 26),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            sheetDragHandle(context),
+            const SizedBox(height: 18),
+            Text(
+              'Sticker Options',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: colors.tx),
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              height: 54,
+              child: OutlinedButton(
+                onPressed: () => Navigator.of(sheetContext).pop('use_as_tray'),
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: colors.line),
+                  shape: const StadiumBorder(),
+                ),
+                child: Text(
+                  'Use as Tray Icon',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: colors.tx),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (action == 'use_as_tray' && context.mounted) {
+      final packDetailBloc = context.read<PackDetailBloc>();
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => BlocProvider.value(
+            value: packDetailBloc,
+            child: CropScreen(sourcePath: stickerPath),
+          ),
+        ),
+      );
+    }
   }
 
   void _openImportScreen(BuildContext context) {
@@ -118,7 +172,15 @@ class _PackDetailScreenState extends State<PackDetailScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             sheetDragHandle(sheetContext),
-            Text('Rename pack', style: TextStyle(fontSize: 23, fontWeight: FontWeight.w800, color: colors.tx)),
+            Text(
+              'Rename pack',
+              style: TextStyle(
+                fontSize: 23,
+                fontWeight: FontWeight.w800,
+                fontFamily: 'Baloo 2',
+                color: colors.tx,
+              ),
+            ),
             const SizedBox(height: 18),
             TextField(controller: nameController, autofocus: true),
             const SizedBox(height: 20),
@@ -269,7 +331,12 @@ class _PackDetailScreenState extends State<PackDetailScreen> {
             sheetDragHandle(sheetContext),
             Text(
               'Add to WhatsApp',
-              style: TextStyle(fontSize: 23, fontWeight: FontWeight.w800, color: colors.tx),
+              style: TextStyle(
+                fontSize: 23,
+                fontWeight: FontWeight.w800,
+                fontFamily: 'Baloo 2',
+                color: colors.tx,
+              ),
             ),
             const SizedBox(height: 18),
             Container(
@@ -363,7 +430,12 @@ class _PackDetailScreenState extends State<PackDetailScreen> {
             const SizedBox(height: 16),
             Text(
               'Pack added to WhatsApp',
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: colors.tx),
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                fontFamily: 'Baloo 2',
+                color: colors.tx,
+              ),
             ),
             const SizedBox(height: 6),
             Text(
@@ -412,7 +484,12 @@ class _PackDetailScreenState extends State<PackDetailScreen> {
               children: [
                 Text(
                   title,
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: colors.tx),
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    fontFamily: 'Baloo 2',
+                    color: colors.tx,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Text(body, style: TextStyle(fontSize: 14, color: colors.mut)),
@@ -440,11 +517,18 @@ class _PackDetailScreenState extends State<PackDetailScreen> {
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
-      create: (context) => ImportBloc(
-        importRepository: ImportRepository(),
-        stickerProcessor: context.read<StickerProcessor>(),
-        thumbnailFetcher: LinkThumbnailFetcher(),
-      ),
+      create: (context) {
+        final bloc = ImportBloc(
+          importRepository: ImportRepository(),
+          stickerProcessor: context.read<StickerProcessor>(),
+          thumbnailFetcher: LinkThumbnailFetcher(),
+        );
+        final pending = widget.pendingThumbnailPaths;
+        if (pending != null && pending.isNotEmpty) {
+          bloc.add(LinkThumbnailConfirmed(pending));
+        }
+        return bloc;
+      },
       child: MultiBlocListener(
         listeners: [
           BlocListener<PackDetailBloc, PackDetailState>(
@@ -553,7 +637,11 @@ class _PackDetailScreenState extends State<PackDetailScreen> {
                                       const SizedBox(height: 2),
                                       Text(
                                         pack.trayIconPath != null ? '96×96 · PNG' : 'Not set yet',
-                                        style: TextStyle(fontSize: 12.5, color: colors.mut),
+                                        style: TextStyle(
+                                          fontSize: 12.5,
+                                          fontFamily: 'JetBrains Mono',
+                                          color: colors.mut,
+                                        ),
                                       ),
                                     ],
                                   ),
@@ -569,15 +657,30 @@ class _PackDetailScreenState extends State<PackDetailScreen> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text.rich(
-                                TextSpan(
-                                  text: 'Stickers ',
-                                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: colors.tx),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    TextSpan(
-                                      text: '$n / 30',
-                                      style: TextStyle(color: colors.mut, fontWeight: FontWeight.w600),
+                                    Text.rich(
+                                      TextSpan(
+                                        text: 'Stickers ',
+                                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: colors.tx),
+                                        children: [
+                                          TextSpan(
+                                            text: '$n / 30',
+                                            style: TextStyle(color: colors.mut, fontWeight: FontWeight.w600),
+                                          ),
+                                        ],
+                                      ),
                                     ),
+                                    if (n > 0)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 2),
+                                        child: Text(
+                                          'Tap any sticker to use as tray icon',
+                                          style: TextStyle(fontSize: 11.5, color: colors.mut),
+                                        ),
+                                      ),
                                   ],
                                 ),
                               ),
@@ -619,6 +722,7 @@ class _PackDetailScreenState extends State<PackDetailScreen> {
                                     style: TextStyle(
                                       fontSize: 18,
                                       fontWeight: FontWeight.w800,
+                                      fontFamily: 'Baloo 2',
                                       color: colors.tx,
                                     ),
                                   ),
@@ -656,6 +760,7 @@ class _PackDetailScreenState extends State<PackDetailScreen> {
                                 return StickerGridTile(
                                   filePath: sticker.filePath,
                                   isAnimated: sticker.type == StickerType.animated,
+                                  onTap: () => _showStickerOptions(context, sticker.filePath),
                                   onRemove: () {
                                     context.read<PackDetailBloc>().add(StickerRemoved(sticker.id));
                                     showToast(context, 'Sticker removed');
@@ -670,7 +775,7 @@ class _PackDetailScreenState extends State<PackDetailScreen> {
                 ),
               ),
               bottomNavigationBar: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 26),
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
                 child: _bottomCta(context, state),
               ),
             );

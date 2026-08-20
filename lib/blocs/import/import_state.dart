@@ -9,7 +9,7 @@ class ImportState extends Equatable {
     this.status = ImportStatus.initial,
     this.current,
     this.total,
-    this.thumbnailPath,
+    this.thumbnailPaths,
     this.processedFilePaths,
     this.type,
     this.failureMessage,
@@ -18,7 +18,7 @@ class ImportState extends Equatable {
   final ImportStatus status;
   final int? current;
   final int? total;
-  final String? thumbnailPath;
+  final List<String>? thumbnailPaths;
   final List<String>? processedFilePaths;
   final StickerType? type;
   final String? failureMessage;
@@ -28,7 +28,7 @@ class ImportState extends Equatable {
     status,
     current,
     total,
-    thumbnailPath,
+    thumbnailPaths,
     processedFilePaths,
     type,
     failureMessage,

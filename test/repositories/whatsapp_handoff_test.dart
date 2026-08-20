@@ -1,12 +1,12 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sticker_creator/models/sticker_pack.dart';
-import 'package:sticker_creator/repositories/whatsapp_handoff.dart';
+import 'package:stickerbox/models/sticker_pack.dart';
+import 'package:stickerbox/repositories/whatsapp_handoff.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  const channel = MethodChannel('sticker_creator/whatsapp');
+  const channel = MethodChannel('stickerbox/whatsapp');
   final log = <MethodCall>[];
   late WhatsAppHandoff handoff;
 

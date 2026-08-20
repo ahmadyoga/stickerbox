@@ -1,21 +1,141 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'dart:async';
 
+import '../blocs/import/import_bloc.dart';
 import '../blocs/pack_detail/pack_detail_bloc.dart';
 import '../blocs/pack_list/pack_list_bloc.dart';
 import '../blocs/pack_list/pack_list_event.dart';
 import '../blocs/pack_list/pack_list_state.dart';
 import '../blocs/theme/theme_cubit.dart';
 import '../models/sticker_pack.dart';
+import '../repositories/import_repository.dart';
+import '../repositories/link_thumbnail_fetcher.dart';
 import '../repositories/pack_repository.dart';
 import '../repositories/sticker_processor.dart';
 import '../theme.dart';
 import '../widgets/app_sheet.dart';
+import '../widgets/import_link_sheet.dart';
 import '../widgets/pack_list_tile.dart';
 import 'pack_detail_screen.dart';
 
-class PackListScreen extends StatelessWidget {
+class PackListScreen extends StatefulWidget {
   const PackListScreen({super.key});
+
+  @override
+  State<PackListScreen> createState() => _PackListScreenState();
+}
+
+class _PackListScreenState extends State<PackListScreen> {
+  StreamSubscription<String>? _shareSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _initShareIntentHandling();
+  }
+
+  @override
+  void dispose() {
+    _shareSubscription?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _initShareIntentHandling() async {
+    final importRepo = ImportRepository();
+    
+    // Handle initial shared URL (when app is opened via share)
+    final initialUrl = await importRepo.getInitialSharedUrl();
+    if (initialUrl != null && mounted) {
+      _handleSharedUrl(initialUrl);
+    }
+
+    // Listen for shared URLs while app is running
+    _shareSubscription = importRepo.getSharedUrlStream().listen((url) {
+      if (mounted) {
+        _handleSharedUrl(url);
+      }
+    });
+  }
+
+  void _handleSharedUrl(String url) {
+    debugPrint('[ShareIntent] resolved url: $url');
+    final fetcher = LinkThumbnailFetcher();
+    if (!fetcher.isSupportedUrl(url)) {
+      debugPrint('[ShareIntent] rejected as unsupported: $url');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unsupported link. Only TikTok, Instagram, and Pinterest links are supported.'),
+        ),
+      );
+      return;
+    }
+
+    // Show import sheet
+    _showImportLinkSheet(url);
+  }
+
+  Future<void> _showImportLinkSheet(String url) async {
+    final packListBloc = context.read<PackListBloc>();
+    
+    final result = await showModalBottomSheet<Map<String, dynamic>?>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => MultiBlocProvider(
+        providers: [
+          BlocProvider.value(value: packListBloc),
+          BlocProvider(
+            create: (context) => ImportBloc(
+              importRepository: ImportRepository(),
+              stickerProcessor: context.read<StickerProcessor>(),
+              thumbnailFetcher: LinkThumbnailFetcher(),
+            ),
+          ),
+        ],
+        child: ImportLinkSheet(url: url),
+      ),
+    );
+    
+    if (result == null || !mounted) return;
+    
+    // Handle the result
+    final createNewPack = result['createNewPack'] as bool;
+    final thumbnailPaths = result['thumbnailPaths'] as List<String>;
+    
+    String targetPackId;
+    
+    if (createNewPack) {
+      final packName = result['newPackName'] as String;
+      final packPublisher = result['newPackPublisher'] as String;
+      
+      // Create the new pack
+      packListBloc.add(PackCreated(packName, packPublisher));
+      
+      // Wait for pack creation
+      await Future.delayed(const Duration(milliseconds: 100));
+      if (!mounted) return;
+      targetPackId = packListBloc.lastCreatedPackId!;
+    } else {
+      targetPackId = result['packId'] as String;
+    }
+
+    // Navigate to pack detail; PackDetailScreen seeds its own ImportBloc with
+    // the pending thumbnails once it opens.
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => BlocProvider(
+          create: (context) => PackDetailBloc(
+            repository: context.read<PackRepository>(),
+            stickerProcessor: context.read<StickerProcessor>(),
+          ),
+          child: PackDetailScreen(packId: targetPackId, pendingThumbnailPaths: thumbnailPaths),
+        ),
+      ),
+    );
+    
+    packListBloc.add(const PackListLoadRequested());
+  }
 
   Future<void> _openCreateSheet(BuildContext context) async {
     final nameController = TextEditingController();
@@ -30,7 +150,15 @@ class PackListScreen extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             sheetDragHandle(sheetContext),
-            Text('New pack', style: TextStyle(fontSize: 23, fontWeight: FontWeight.w800, color: colors.tx)),
+            Text(
+              'New pack',
+              style: TextStyle(
+                fontSize: 23,
+                fontWeight: FontWeight.w800,
+                fontFamily: 'Baloo 2',
+                color: colors.tx,
+              ),
+            ),
             const SizedBox(height: 18),
             Text('PACK NAME', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: colors.mut)),
             const SizedBox(height: 6),
@@ -65,6 +193,23 @@ class PackListScreen extends StatelessWidget {
         ),
       );
     });
+    
+    // Navigate to the newly created pack
+    final createdPackId = packListBloc.lastCreatedPackId;
+    if (createdPackId != null && mounted) {
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => BlocProvider(
+            create: (context) => PackDetailBloc(
+              repository: context.read<PackRepository>(),
+              stickerProcessor: context.read<StickerProcessor>(),
+            ),
+            child: PackDetailScreen(packId: createdPackId),
+          ),
+        ),
+      );
+      packListBloc.add(const PackListLoadRequested());
+    }
   }
 
   Future<void> _openRenameSheet(BuildContext context, StickerPack pack) async {
@@ -79,7 +224,15 @@ class PackListScreen extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             sheetDragHandle(sheetContext),
-            Text('Rename pack', style: TextStyle(fontSize: 23, fontWeight: FontWeight.w800, color: colors.tx)),
+            Text(
+              'Rename pack',
+              style: TextStyle(
+                fontSize: 23,
+                fontWeight: FontWeight.w800,
+                fontFamily: 'Baloo 2',
+                color: colors.tx,
+              ),
+            ),
             const SizedBox(height: 18),
             TextField(controller: nameController, autofocus: true),
             const SizedBox(height: 20),
@@ -167,7 +320,13 @@ class PackListScreen extends StatelessWidget {
                           children: [
                             Text(
                               'Stickerbox',
-                              style: TextStyle(fontSize: 29, fontWeight: FontWeight.w800, color: colors.tx),
+                              style: TextStyle(
+                                fontSize: 29,
+                                fontWeight: FontWeight.w800,
+                                fontFamily: 'Baloo 2',
+                                letterSpacing: -.4,
+                                color: colors.tx,
+                              ),
                             ),
                             const SizedBox(height: 2),
                             Text(
@@ -207,6 +366,7 @@ class PackListScreen extends StatelessWidget {
                                       style: TextStyle(
                                         fontSize: 22,
                                         fontWeight: FontWeight.w800,
+                                        fontFamily: 'Baloo 2',
                                         color: colors.tx,
                                       ),
                                     ),
@@ -257,7 +417,7 @@ class PackListScreen extends StatelessWidget {
         ),
       ),
       bottomNavigationBar: Padding(
-        padding: const EdgeInsets.fromLTRB(22, 0, 22, 26),
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
         child: SizedBox(
           height: 58,
           child: ElevatedButton.icon(

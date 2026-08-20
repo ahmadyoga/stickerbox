@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
-import 'package:sticker_creator/repositories/sticker_processor.dart';
+import 'package:stickerbox/repositories/sticker_processor.dart';
 
 void main() {
   test('encodeAnimatedGif produces an animated WebP file under 500KB', () async {

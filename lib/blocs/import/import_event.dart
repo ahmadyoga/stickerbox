@@ -25,5 +25,10 @@ class LinkUrlSubmitted extends ImportEvent {
 }
 
 class LinkThumbnailConfirmed extends ImportEvent {
-  const LinkThumbnailConfirmed();
+  const LinkThumbnailConfirmed(this.selectedPaths);
+
+  final List<String> selectedPaths;
+
+  @override
+  List<Object?> get props => [selectedPaths];
 }

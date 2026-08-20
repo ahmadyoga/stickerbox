@@ -4,7 +4,7 @@ import '../models/sticker_pack.dart';
 
 class WhatsAppHandoff {
   WhatsAppHandoff({MethodChannel? channel})
-      : _channel = channel ?? const MethodChannel('sticker_creator/whatsapp');
+      : _channel = channel ?? const MethodChannel('stickerbox/whatsapp');
 
   final MethodChannel _channel;
 

@@ -14,6 +14,9 @@ class PackListBloc extends Bloc<PackListEvent, PackListState> {
   }
 
   final PackRepository _repository;
+  String? _lastCreatedPackId;
+
+  String? get lastCreatedPackId => _lastCreatedPackId;
 
   String _newId() =>
       '${DateTime.now().microsecondsSinceEpoch}-${identityHashCode(this)}';
@@ -27,8 +30,10 @@ class PackListBloc extends Bloc<PackListEvent, PackListState> {
   }
 
   Future<void> _onCreated(PackCreated event, Emitter<PackListState> emit) async {
+    final packId = _newId();
+    _lastCreatedPackId = packId;
     await _repository.savePack(
-      StickerPack(id: _newId(), name: event.name, publisherName: event.publisherName),
+      StickerPack(id: packId, name: event.name, publisherName: event.publisherName),
     );
     _emitLoaded(emit);
   }

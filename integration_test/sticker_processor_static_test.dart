@@ -4,7 +4,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path/path.dart' as p;
-import 'package:sticker_creator/repositories/sticker_processor.dart';
+import 'package:stickerbox/repositories/sticker_processor.dart';
 
 // Exercises the real flutter_image_compress platform channel on-device.
 // See test/repositories/sticker_processor_static_test.dart for why this

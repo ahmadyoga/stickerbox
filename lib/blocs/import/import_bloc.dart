@@ -27,8 +27,6 @@ class ImportBloc extends Bloc<ImportEvent, ImportState> {
   final StickerProcessor stickerProcessor;
   final LinkThumbnailFetcher thumbnailFetcher;
 
-  String? _pendingThumbnailPath;
-
   Future<String> _newOutputPath(String extension) async {
     final dir = await getApplicationDocumentsDirectory();
     final id = '${DateTime.now().microsecondsSinceEpoch}';
@@ -79,12 +77,15 @@ class ImportBloc extends Bloc<ImportEvent, ImportState> {
   Future<void> _onLinkUrlSubmitted(LinkUrlSubmitted event, Emitter<ImportState> emit) async {
     emit(const ImportState(status: ImportStatus.processing));
     try {
-      final thumbnailUrl = await thumbnailFetcher.fetchThumbnailUrl(event.url);
-      final localPath = await _newOutputPath('jpg');
-      await Directory(p.dirname(localPath)).create(recursive: true);
-      await thumbnailFetcher.downloadImage(thumbnailUrl, localPath);
-      _pendingThumbnailPath = localPath;
-      emit(ImportState(status: ImportStatus.thumbnailPreview, thumbnailPath: localPath));
+      final thumbnailUrls = await thumbnailFetcher.fetchThumbnailUrls(event.url);
+      final localPaths = <String>[];
+      for (final thumbnailUrl in thumbnailUrls) {
+        final localPath = await _newOutputPath('jpg');
+        await Directory(p.dirname(localPath)).create(recursive: true);
+        await thumbnailFetcher.downloadImage(thumbnailUrl, localPath);
+        localPaths.add(localPath);
+      }
+      emit(ImportState(status: ImportStatus.thumbnailPreview, thumbnailPaths: localPaths));
     } on LinkThumbnailException catch (e) {
       emit(ImportState(status: ImportStatus.failure, failureMessage: e.message));
     } catch (e) {
@@ -96,13 +97,19 @@ class ImportBloc extends Bloc<ImportEvent, ImportState> {
     LinkThumbnailConfirmed event,
     Emitter<ImportState> emit,
   ) async {
-    final pending = _pendingThumbnailPath;
-    if (pending == null) return;
+    final pending = event.selectedPaths;
+    if (pending.isEmpty) return;
     emit(const ImportState(status: ImportStatus.processing));
     try {
-      final outputPath = await _newOutputPath('webp');
-      await stickerProcessor.encodeStatic(pending, outputPath);
-      emit(ImportState(status: ImportStatus.ready, processedFilePaths: [outputPath], type: StickerType.static_));
+      final total = pending.length;
+      final outputs = <String>[];
+      for (var i = 0; i < pending.length; i++) {
+        final outputPath = await _newOutputPath('webp');
+        await stickerProcessor.encodeStatic(pending[i], outputPath);
+        outputs.add(outputPath);
+        emit(ImportState(status: ImportStatus.processing, current: i + 1, total: total));
+      }
+      emit(ImportState(status: ImportStatus.ready, processedFilePaths: outputs, type: StickerType.static_));
     } catch (e) {
       emit(ImportState(status: ImportStatus.failure, failureMessage: e.toString()));
     }

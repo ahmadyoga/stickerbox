@@ -4,13 +4,13 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
-import 'package:sticker_creator/blocs/import/import_bloc.dart';
-import 'package:sticker_creator/blocs/import/import_event.dart';
-import 'package:sticker_creator/blocs/import/import_state.dart';
-import 'package:sticker_creator/models/sticker.dart';
-import 'package:sticker_creator/repositories/import_repository.dart';
-import 'package:sticker_creator/repositories/link_thumbnail_fetcher.dart';
-import 'package:sticker_creator/repositories/sticker_processor.dart';
+import 'package:stickerbox/blocs/import/import_bloc.dart';
+import 'package:stickerbox/blocs/import/import_event.dart';
+import 'package:stickerbox/blocs/import/import_state.dart';
+import 'package:stickerbox/models/sticker.dart';
+import 'package:stickerbox/repositories/import_repository.dart';
+import 'package:stickerbox/repositories/link_thumbnail_fetcher.dart';
+import 'package:stickerbox/repositories/sticker_processor.dart';
 
 class MockImportRepository extends Mock implements ImportRepository {}
 
@@ -123,8 +123,8 @@ void main() {
     'LinkUrlSubmitted fetches and previews a thumbnail',
     setUp: () {
       when(
-        () => thumbnailFetcher.fetchThumbnailUrl(any()),
-      ).thenAnswer((_) async => 'https://example.com/thumb.jpg');
+        () => thumbnailFetcher.fetchThumbnailUrls(any()),
+      ).thenAnswer((_) async => ['https://example.com/thumb.jpg']);
       when(() => thumbnailFetcher.downloadImage(any(), any())).thenAnswer((_) async {});
     },
     build: buildBloc,
@@ -132,11 +132,13 @@ void main() {
     wait: const Duration(milliseconds: 50),
     expect: () => [
       const ImportState(status: ImportStatus.processing),
-      isA<ImportState>().having((s) => s.status, 'status', ImportStatus.thumbnailPreview),
+      isA<ImportState>()
+          .having((s) => s.status, 'status', ImportStatus.thumbnailPreview)
+          .having((s) => s.thumbnailPaths?.length, 'thumbnailPaths.length', 1),
     ],
     verify: (_) {
       verify(
-        () => thumbnailFetcher.fetchThumbnailUrl('https://www.instagram.com/p/abc'),
+        () => thumbnailFetcher.fetchThumbnailUrls('https://www.instagram.com/p/abc'),
       ).called(1);
       verify(
         () => thumbnailFetcher.downloadImage('https://example.com/thumb.jpg', any()),
@@ -145,10 +147,33 @@ void main() {
   );
 
   blocTest<ImportBloc, ImportState>(
+    'LinkUrlSubmitted downloads every image found for a carousel post',
+    setUp: () {
+      when(() => thumbnailFetcher.fetchThumbnailUrls(any())).thenAnswer(
+        (_) async => ['https://example.com/a.jpg', 'https://example.com/b.jpg'],
+      );
+      when(() => thumbnailFetcher.downloadImage(any(), any())).thenAnswer((_) async {});
+    },
+    build: buildBloc,
+    act: (bloc) => bloc.add(const LinkUrlSubmitted('https://www.instagram.com/p/abc')),
+    wait: const Duration(milliseconds: 50),
+    expect: () => [
+      const ImportState(status: ImportStatus.processing),
+      isA<ImportState>()
+          .having((s) => s.status, 'status', ImportStatus.thumbnailPreview)
+          .having((s) => s.thumbnailPaths?.length, 'thumbnailPaths.length', 2),
+    ],
+    verify: (_) {
+      verify(() => thumbnailFetcher.downloadImage('https://example.com/a.jpg', any())).called(1);
+      verify(() => thumbnailFetcher.downloadImage('https://example.com/b.jpg', any())).called(1);
+    },
+  );
+
+  blocTest<ImportBloc, ImportState>(
     'LinkUrlSubmitted emits a failure state when the fetcher throws',
     setUp: () {
       when(
-        () => thumbnailFetcher.fetchThumbnailUrl(any()),
+        () => thumbnailFetcher.fetchThumbnailUrls(any()),
       ).thenThrow(LinkThumbnailException('No preview image found for this link'));
     },
     build: buildBloc,
@@ -160,28 +185,61 @@ void main() {
   );
 
   blocTest<ImportBloc, ImportState>(
-    'LinkThumbnailConfirmed encodes the previewed thumbnail and emits a static ready state',
+    'LinkThumbnailConfirmed encodes every previewed thumbnail and emits a static ready state',
     setUp: () {
-      when(
-        () => thumbnailFetcher.fetchThumbnailUrl(any()),
-      ).thenAnswer((_) async => 'https://example.com/thumb.jpg');
+      when(() => thumbnailFetcher.fetchThumbnailUrls(any())).thenAnswer(
+        (_) async => ['https://example.com/a.jpg', 'https://example.com/b.jpg'],
+      );
       when(() => thumbnailFetcher.downloadImage(any(), any())).thenAnswer((_) async {});
       when(() => stickerProcessor.encodeStatic(any(), any())).thenAnswer((_) async {});
     },
     build: buildBloc,
     act: (bloc) async {
       bloc.add(const LinkUrlSubmitted('https://www.instagram.com/p/abc'));
-      await bloc.stream.firstWhere((s) => s.status == ImportStatus.thumbnailPreview);
-      bloc.add(const LinkThumbnailConfirmed());
+      final preview = await bloc.stream.firstWhere((s) => s.status == ImportStatus.thumbnailPreview);
+      bloc.add(LinkThumbnailConfirmed(preview.thumbnailPaths!));
     },
     wait: const Duration(milliseconds: 50),
     expect: () => [
       const ImportState(status: ImportStatus.processing),
       isA<ImportState>().having((s) => s.status, 'status', ImportStatus.thumbnailPreview),
       const ImportState(status: ImportStatus.processing),
+      const ImportState(status: ImportStatus.processing, current: 1, total: 2),
+      const ImportState(status: ImportStatus.processing, current: 2, total: 2),
       isA<ImportState>()
           .having((s) => s.status, 'status', ImportStatus.ready)
+          .having((s) => s.processedFilePaths?.length, 'processedFilePaths.length', 2)
           .having((s) => s.type, 'type', StickerType.static_),
+    ],
+    verify: (_) {
+      verify(() => stickerProcessor.encodeStatic(any(), any())).called(2);
+    },
+  );
+
+  blocTest<ImportBloc, ImportState>(
+    'LinkThumbnailConfirmed only encodes the caller-selected subset of a carousel',
+    setUp: () {
+      when(() => thumbnailFetcher.fetchThumbnailUrls(any())).thenAnswer(
+        (_) async => ['https://example.com/a.jpg', 'https://example.com/b.jpg', 'https://example.com/c.jpg'],
+      );
+      when(() => thumbnailFetcher.downloadImage(any(), any())).thenAnswer((_) async {});
+      when(() => stickerProcessor.encodeStatic(any(), any())).thenAnswer((_) async {});
+    },
+    build: buildBloc,
+    act: (bloc) async {
+      bloc.add(const LinkUrlSubmitted('https://www.instagram.com/p/abc'));
+      final preview = await bloc.stream.firstWhere((s) => s.status == ImportStatus.thumbnailPreview);
+      bloc.add(LinkThumbnailConfirmed([preview.thumbnailPaths![1]]));
+    },
+    wait: const Duration(milliseconds: 50),
+    expect: () => [
+      const ImportState(status: ImportStatus.processing),
+      isA<ImportState>().having((s) => s.status, 'status', ImportStatus.thumbnailPreview),
+      const ImportState(status: ImportStatus.processing),
+      const ImportState(status: ImportStatus.processing, current: 1, total: 1),
+      isA<ImportState>()
+          .having((s) => s.status, 'status', ImportStatus.ready)
+          .having((s) => s.processedFilePaths?.length, 'processedFilePaths.length', 1),
     ],
     verify: (_) {
       verify(() => stickerProcessor.encodeStatic(any(), any())).called(1);
